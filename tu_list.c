@@ -150,7 +150,10 @@ void tu_list_popfront ( tu_linklist_t *list, int clone )
     }
     else
     {
-        list->rel(list->head->data);
+        if (clone)
+        {
+            list->rel(list->head->data);
+        }
         free(list->head);
         list->head = list->tail = NULL;
     }
@@ -176,7 +179,10 @@ void tu_list_popback ( tu_linklist_t *list, int clone )
     }
     else
     {
-        list->rel(list->tail->data);
+        if (clone)
+        {
+            list->rel(list->tail->data);
+        }
         free(list->tail);
         list->head = list->tail = NULL;
     }
@@ -222,6 +228,28 @@ int tu_list_erase ( tu_linklist_t *list, void *data, int clone )
 size_t tu_list_size ( tu_linklist_t *list )
 {
     return list->size;
+}
+
+
+tu_listnode_t*  tu_list_first(tu_linklist_t *list)
+{
+    return (list->head);
+}
+tu_listnode_t*  tu_list_last(tu_linklist_t *list)
+{
+    return (list->tail);
+}
+tu_listnode_t*  tu_list_next(tu_listnode_t *node)
+{
+    return (node ? node->link[1] : NULL);
+}
+tu_listnode_t*  tu_list_prev(tu_listnode_t *node)
+{
+    return (node ? node->link[0] : NULL);
+}
+void* tu_list_data(tu_listnode_t *node)
+{
+    return (node ? node->data : NULL);
 }
 
 

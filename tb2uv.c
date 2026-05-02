@@ -11,16 +11,49 @@ extern int errno;
 #include "tb2uv.h"
 
 /*to hold all environment data*/
+struct tu__event
+{
+    struct tb_event ev; /*termbox2: event*/
+    int             id; /*user defined*/
+};
 struct tu__env 
 {
-    uv_poll_t       poll_handler;
-    uv_loop_t*      main_loop;
-    tu_window_t*    active_wnd;        /*hold windows*/
+    uv_poll_t       poll_handler;       /*libuv: input stream*/
+    uv_loop_t*      main_loop;          /*libuv: loop*/
+    tu_window_t*    active_wnd;         /*hold windows*/
+    jsw_rbtree_t*   events;             /*hold the registered events*/
 };
+static int   tu_env__cmp ( const void *p1, const void *p2 )
+{
+    struct tu__event* ev1 = (struct tu__event*)p1;
+    struct tu__event* ev2 = (struct tu__event*)p2;
+    return  (ev1->ev.key == ev2->ev.key) && 
+            (ev1->ev.ch  == ev2->ev.ch) && 
+            (ev1->ev.mod == ev2->ev.mod);
+}
+static void *tu_env__dup ( void *p1 )
+{
+    struct tu__event* ev1 = (struct tu__event*)p1;
+    struct tu__event* evp = (struct tu__event*)calloc(1, sizeof(struct tb_event));
+    if (evp)
+    {
+        evp->ev.type    = TB_EVENT_KEY;
+        evp->ev.mod     = ev1->ev.mod;
+        evp->ev.key     = ev1->ev.key;
+        evp->ev.ch      = ev1->ev.ch;
+        evp->id         = ev1->id;
+    }
+    return evp;
+}
+static void  tu_env__rel ( void *p )
+{
+    free(p);
+}
+
 struct tu__env* g_envp = NULL;    /*global termbox2 libuv environment*/
 char g_blank[FIELD_MAX_TEXT + 1] = "";
 
-static struct tu__env*   tu__newinstance()
+static struct tu__env*   tu__getinstance()
 {
     if (g_envp)
     {
@@ -46,6 +79,7 @@ struct tu_field
     int     alignment;
     int     attribs;
     char    text[FIELD_MAX_TEXT + 1];
+    tu_listnode_t*    node;
 };
 
 struct tu_input
@@ -70,11 +104,13 @@ struct tu_window
 {
     jsw_rbtree_t*   children;       /*hold all tu_fields*/
     jsw_rbtrav_t*   childtrav;
-    tu_linklist_t*  movable_iter;   /*to handle movable children*/
-    tu_listtrav_t*  itertrav;
-    tu_listtrav_t*  active_iter;
+    tu_linklist_t*  fields;         /*to handle movable children*/
+    tu_listnode_t*  nodes;
+    /*tu_listtrav_t*  itertrav;
+    tu_listtrav_t*  active_iter;*/
     tu_field_t*     active_input;
     int             default_action; /*default id*/
+    int             (*on_event)(int mod, int key, int ch, void* data);
 };
 static int   tu_wnd__cmp ( const void *p1, const void *p2 )
 {
@@ -106,19 +142,26 @@ int tu_input__draw(tu_field_t* fldp);
 static tu_field_t* tu_wnd__getnextinput(tu_window_t* wndp, int dir)
 {
     tu_field_t* fldp = (wndp ? wndp->active_input : NULL);
-    tu_listtrav_t* iter = tu_listtrav_new();
-    tu_listtrav_clone(iter, wndp->active_iter);
+    /*tu_listtrav_t* iter = tu_listtrav_new();
+    tu_listtrav_clone(iter, wndp->active_iter);*/
+    tu_listnode_t*  node = 0;
     
     while (fldp)
     {
+        node = fldp->node;
         if (dir < 0)
         {
-            fldp = (tu_field_t*)tu_listrav_prev(iter);
+            node = tu_list_prev(node);
         }
         else /*if (dir >= 0)*/
         {
-            fldp = (tu_field_t*)tu_listrav_next(iter);
+            node = tu_list_next(node);
         }
+        if (NULL == node)
+        {
+            break;
+        }
+        fldp = (tu_field_t*)tu_list_data(node);
         if (fldp && fldp->type == FIELD_INPUT && fldp->enable && fldp->visible)
         {
             break;
@@ -131,7 +174,7 @@ static tu_field_t* tu_wnd__getnextinput(tu_window_t* wndp, int dir)
         inp->first_focus = 0;
         tu_input__draw(wndp->active_input);
         
-        tu_listtrav_clone(wndp->active_iter, iter);
+        /*tu_listtrav_clone(wndp->active_iter, iter);*/
         
         inp = (tu_input_t*)fldp;
         inp->first_focus = 1;
@@ -140,7 +183,7 @@ static tu_field_t* tu_wnd__getnextinput(tu_window_t* wndp, int dir)
         wndp->active_input = fldp;
     }
     
-    tu_listtrav_delete(iter);
+    /*tu_listtrav_delete(iter);*/
     return fldp;
 }
 
@@ -150,25 +193,34 @@ int         field_process_event(tu_field_t* fldp, struct tb_event* evp);
 
 static void on_termbox_event(uv_poll_t* handle, int status, int events)
 {
-    static int y = 1;
     struct tb_event ev;
     int rc = tb_peek_event(&ev, 0);
     struct tu__env* envp = (struct tu__env*)handle->data;
     tu_window_t* wndp = tu_getwindow(envp);
 
-    if (rc == TB_OK)
+    if (rc == TB_OK && wndp)
     {
         if (ev.type == TB_EVENT_KEY)
         {
-            if (ev.key == TB_KEY_F3 && ev.mod == TB_MOD_ALT)
+            /*check the active window processing the key if it is registered the event*/
+            rc = 0;
+            if (wndp->on_event)
             {
-                tb_shutdown();
-                uv_stop(uv_default_loop());
+                rc = wndp->on_event(ev.mod, ev.key, ev.ch, wndp);
+            }
+            if (rc != 0)
+            {
+                return; /*alreay processed by wndp*/
+            }
+            /*the global event*/
+            if (ev.key == TB_KEY_CTRL_C)
+            {
+                tu_shutdown();
             }
             else if (ev.key == TB_KEY_ENTER)
             {
                 /*process a default action in the active window*/
-                if (wndp && wndp->default_action != 0)
+                if (wndp->default_action != 0)
                 {
                 }
                 else
@@ -177,52 +229,63 @@ static void on_termbox_event(uv_poll_t* handle, int status, int events)
             }
             else if (ev.key == TB_KEY_BACK_TAB)
             {
-                if (wndp)
-                {
-                    tu_field_t* nextfldp = tu_wnd__getnextinput(wndp, -1);
-                }
+                tu_field_t* nextfldp = tu_wnd__getnextinput(wndp, -1);
             }
             else if (ev.key == TB_KEY_TAB)
             {
-                if (wndp)
-                {
-                    tu_field_t* nextfldp = tu_wnd__getnextinput(wndp, 1);
-                }
+                tu_field_t* nextfldp = tu_wnd__getnextinput(wndp, 1);
             }
             else
             {
-                if (wndp)
-                {
-                    tu_field_t* curfldp = tu_wnd__getinput(wndp);
-                    field_process_event(curfldp, &ev);
-                    tu_fld_draw(curfldp);
-                }
+                tu_field_t* curfldp = tu_wnd__getinput(wndp);
+                field_process_event(curfldp, &ev);
+                tu_fld_draw(curfldp);
             }
+        }
+    }
+    else if (TB_OK == rc)
+    {
+        /*the global event*/
+        if (ev.key == TB_KEY_CTRL_C)
+        {
+            tu_shutdown();
         }
     }
 }
 
 int     tu_init()
 {
+    struct tu__env* envp = tu__getinstance();
     /*termbox2*/
     tb_init();
     /*tb_set_input_mode(TB_INPUT_ALT);*/
+    envp->events = jsw_rbnew(tu_env__cmp, tu_env__dup, tu_env__rel);
 
     /*libuv*/
-    tu__newinstance();  /*first init environment*/
-    g_envp->main_loop = uv_default_loop();
+    /*tu__getinstance(); */ /*first init environment*/
+    envp->main_loop = uv_default_loop();
     
-    uv_poll_init(g_envp->main_loop, &g_envp->poll_handler, STDIN_FILENO);
-    g_envp->poll_handler.data = g_envp;
-    uv_poll_start(&g_envp->poll_handler, UV_READABLE, on_termbox_event);
+    uv_poll_init(envp->main_loop, &envp->poll_handler, STDIN_FILENO);
+    envp->poll_handler.data = envp;
+    uv_poll_start(&envp->poll_handler, UV_READABLE, on_termbox_event);
     
     /*windows*/
-    g_envp->active_wnd = NULL;
+    envp->active_wnd = NULL;
     
     /*others*/
     memset(g_blank, ' ', sizeof(g_blank));
     g_blank[FIELD_MAX_TEXT] = 0;
     return 0;
+}
+
+void tu_shutdown()
+{
+    struct tu__env* envp = tu__getinstance();
+    /*free*/
+
+    /*libs*/
+    tb_shutdown();
+    uv_stop(uv_default_loop());
 }
 
 void    tu_setcbreak(int cbreak)
@@ -247,26 +310,51 @@ void    tu_setcbreak(int cbreak)
 
 int     tu_run()
 {
-    uv_run(g_envp->main_loop, UV_RUN_DEFAULT);
+    struct tu__env* envp = tu__getinstance();
+    uv_run(envp->main_loop, UV_RUN_DEFAULT);
     return 0;
 }
 
 tu_window_t*    tu_setwindow(tu_window_t* wnd)
 {
+    struct tu__env* envp = tu__getinstance();
     tu_window_t* oldwnd = NULL;
-    if (g_envp)
-    {
-        oldwnd = g_envp->active_wnd;
-        g_envp->active_wnd = wnd;
-    }
+    oldwnd = envp->active_wnd;
+    envp->active_wnd = wnd;
     return oldwnd;
 }
 
 tu_window_t*    tu_getwindow()
 {
-    return (g_envp ? g_envp->active_wnd : NULL);
+    struct tu__env* envp = tu__getinstance();
+    return envp->active_wnd;
 }
 
+int tu_addevent(int mod, int key, int ch, int id)
+{
+    int rc = 0;
+    struct tu__env* envp = tu__getinstance();
+    struct tu__event ev;
+
+    memset(&ev, 0, sizeof(ev));
+    ev.ev.mod = mod;
+    ev.ev.key = key;
+    ev.ev.ch  = ch;
+    ev.id     = id;
+    rc = jsw_rbinsert(envp->events, &ev);
+    return rc;
+}
+void    tu_removeevent(int mod, int key, int ch)
+{
+    struct tu__env* envp = tu__getinstance();
+    struct tu__event ev;
+
+    memset(&ev, 0, sizeof(ev));
+    ev.ev.mod = mod;
+    ev.ev.key = key;
+    ev.ev.ch  = ch;
+    jsw_rberase(envp->events, &ev);
+}
 
 static void field_format_text(char* dest, int limit, const char* src, int alignment)
 {
@@ -344,15 +432,19 @@ static void field_draw(int x, int y, int width, const char* text, int fg, int bg
     }
 }
 
-void tu_draw_text(int x, int y, int width, const char* text, int fg, int bg, int alignment, int attribs, int redraw)
+static void field_filltext(int x, int y, int width, int height, const char* text, int fg, int bg, int alignment, int attribs, int redraw)
+{
+}
+
+void tu_drawtext(int x, int y, int width, const char* text, int fg, int bg, int alignment, int attribs, int redraw)
 {
     field_draw(x, y, width, text, fg, bg, alignment, attribs, redraw);
 }
 
-void tu_draw_char(int x, int y, char ch, int fg, int bg, int alignment, int attribs, int redraw)
+void tu_drawchar(int x, int y, char ch, int fg, int bg, int alignment, int attribs, int redraw)
 {
     char sz[2] = { ch, 0 };
-    tu_draw_text(x, y, 1, sz, fg, bg, FIELD_LEFT, attribs, redraw);
+    tu_drawtext(x, y, 1, sz, fg, bg, FIELD_LEFT, attribs, redraw);
 }
 
 void tu_format(char* dest, int limit, const char* src, int alignment)
@@ -360,21 +452,21 @@ void tu_format(char* dest, int limit, const char* src, int alignment)
     field_format_text(dest, limit, src, alignment);
 }
 
-void tu_draw_line(int x, int y, int width, char ch, int fg, int bg, int attribs, int redraw)
+void tu_drawline(int x, int y, int width, char ch, int fg, int bg, int attribs, int redraw)
 {
     char line[FIELD_MAX_TEXT + 1];
     memset(line, ch, sizeof(line));
     line[FIELD_MAX_TEXT] = 0;
-    tu_draw_text(x, y, width, line, fg, bg, FIELD_LEFT, attribs, redraw);
+    tu_drawtext(x, y, width, line, fg, bg, FIELD_LEFT, attribs, redraw);
 }
 
-void tu_draw_vline(int x, int y, int height, char ch, int fg, int bg, int attribs, int redraw)
+void tu_drawvline(int x, int y, int height, char ch, int fg, int bg, int attribs, int redraw)
 {
     char sz[2] = { ch, 0 };
     int i = 0;
     for (i = 0; i < height; ++i)
     {
-        tu_draw_text(x, y + i, 1, sz, fg, bg, FIELD_LEFT, attribs, 0);
+        tu_drawtext(x, y + i, 1, sz, fg, bg, FIELD_LEFT, attribs, 0);
     }
     if (redraw)
     {
@@ -382,33 +474,47 @@ void tu_draw_vline(int x, int y, int height, char ch, int fg, int bg, int attrib
     }
 }
 
-void tu_draw_box(int x, int y, int width, int height, char chhorz, char chvert, char chcorner, int fg, int bg, int attribs, int redraw)
+void tu_drawbox(int x, int y, int width, int height, char chhorz, char chvert, char chcorner, int fg, int bg, int attribs, int redraw)
 {
     char sz[2] = { chcorner, 0 };
     /*upper-left corner*/
-    tu_draw_text(x, y, 1, sz, fg, bg, FIELD_LEFT, attribs, 0);
+    tu_drawtext(x, y, 1, sz, fg, bg, FIELD_LEFT, attribs, 0);
     /*upper-right corner*/
-    tu_draw_text(x + width, y, 1, sz, fg, bg, FIELD_LEFT, attribs, 0);
+    tu_drawtext(x + width, y, 1, sz, fg, bg, FIELD_LEFT, attribs, 0);
     /*lower-left corner*/
-    tu_draw_text(x, y + height, 1, sz, fg, bg, FIELD_LEFT, attribs, 0);
+    tu_drawtext(x, y + height, 1, sz, fg, bg, FIELD_LEFT, attribs, 0);
     /*lower-right corner*/
-    tu_draw_text(x + width, y + height, 1, sz, fg, bg, FIELD_LEFT, attribs, 0);
+    tu_drawtext(x + width, y + height, 1, sz, fg, bg, FIELD_LEFT, attribs, 0);
     
     /*draw upper line*/
-    tu_draw_line(x + 1, y, width - 1, chhorz, fg, bg, attribs, 0);
+    tu_drawline(x + 1, y, width - 1, chhorz, fg, bg, attribs, 0);
     /*draw lower line*/
-    tu_draw_line(x + 1, y + height, width - 1, chhorz, fg, bg, attribs, 0);
+    tu_drawline(x + 1, y + height, width - 1, chhorz, fg, bg, attribs, 0);
     
     /*draw left line*/
-    tu_draw_vline(x, y + 1, height - 1, chvert, fg, bg, attribs, 0);
+    tu_drawvline(x, y + 1, height - 1, chvert, fg, bg, attribs, 0);
     /*draw right line*/
-    tu_draw_vline(x + width, y + 1, height - 1, chvert, fg, bg, attribs, 0);
+    tu_drawvline(x + width, y + 1, height - 1, chvert, fg, bg, attribs, 0);
     if (redraw)
     {
         tb_present();
     }
 }
 
+void tu_fillbox(int x, int y, int width, int height, char ch, int fg, int bg, int redraw)
+{
+    int i = 0;
+    memset(g_blank, ch, sizeof(g_blank));
+    g_blank[FIELD_MAX_TEXT] = 0;
+    for (i = 0; i < height; ++i)
+    {
+        tu_drawtext(x, y + i, width, g_blank, fg, bg, 0, 0, 0);
+    }
+    if (redraw)
+    {
+        tb_present();
+    }
+}
 
 #define INIT_FIELD_MEMBER(field_ptr, field_size, id, typ, x, y, w, txt)  \
 do {                                                        \
@@ -558,7 +664,7 @@ int tu_fld_draw(tu_field_t* fldp)
         tu_input__draw(fldp);
         return 0;
     }
-    tu_draw_text(fldp->x, fldp->y, fldp->w, 
+    tu_drawtext(fldp->x, fldp->y, fldp->w, 
         fldp->text, 
         fldp->fgcolor, fldp->bgcolor, 
         fldp->alignment, fldp->attribs, 1);
@@ -577,23 +683,15 @@ int tu_input__process_event(tu_field_t* fldp, struct tb_event* ev)
     }
     if (inp->first_focus)
     {
+        inp->xpos = 0;
+        inp->xcur = 0;
+        memset(fldp->text, 0, FIELD_MAX_TEXT);
+        fldp->text[FIELD_MAX_TEXT] = 0;
+
         if (ev->ch)
         {
-            inp->xpos = 0;
-            inp->xcur = 0;
-            memset(fldp->text, 0, FIELD_MAX_TEXT);
-            fldp->text[FIELD_MAX_TEXT] = 0;
-
             fldp->text[inp->xcur] = ev->ch;
             ++inp->xcur;
-        }
-        else if (ev->key == TB_KEY_BACKSPACE ||
-                 ev->key == TB_KEY_BACKSPACE2)
-        {
-            inp->xpos = 0;
-            inp->xcur = 0;
-            memset(fldp->text, 0, FIELD_MAX_TEXT);
-            fldp->text[FIELD_MAX_TEXT] = 0;
         }
         inp->first_focus = 0;
         return 0;
@@ -661,24 +759,24 @@ tu_window_t*    tu_wnd_new()
             return NULL;
         }
         wndp->childtrav     = jsw_rbtnew();
-        wndp->movable_iter  = tu_list_new(tu_wnd__cmp, tu_wnd__dup, tu_wnd__rel);
-        wndp->itertrav      = tu_listtrav_new();
-        wndp->active_iter   = tu_listtrav_new();
+        wndp->fields        = tu_list_new(tu_wnd__cmp, tu_wnd__dup, tu_wnd__rel);
+        /*wndp->itertrav      = tu_listtrav_new();
+        wndp->active_iter   = tu_listtrav_new();*/
     }
     return wndp;
 }
 
 void tu_wnd_delete(tu_window_t* wndp)
 {
-    if (wndp->itertrav)
+    /*if (wndp->itertrav)
     {
         free(wndp->itertrav);
         wndp->itertrav = NULL;
-    }
-    if (wndp->movable_iter)
+    }*/
+    if (wndp->fields)
     {
-        tu_list_delete(wndp->movable_iter);
-        wndp->movable_iter = NULL;
+        tu_list_delete(wndp->fields);
+        wndp->fields = NULL;
     }
     if (wndp->childtrav)
     {
@@ -693,55 +791,114 @@ void tu_wnd_delete(tu_window_t* wndp)
     free(wndp);
 }
 
+void tu_wnd_removefield(tu_window_t* wndp, int id)
+{
+    tu_field_t* fldp = tu_wnd_getfield(wndp, id);
+    
+    if (fldp)
+    {
+        if (fldp == wndp->active_input)
+        {
+            tu_field_t* nextp = tu_wnd__getnextinput(wndp, -1);
+            if (fldp == nextp)
+            {
+                /*no prev*/
+                nextp = tu_wnd__getnextinput(wndp, 1);
+            }
+            if (fldp == nextp)
+            {
+                /*no next: only one input active*/
+                wndp->active_input = NULL;
+            }
+        }
+        tu_list_erase(wndp->fields, fldp, 0);
+        jsw_rberase(wndp->children, fldp);
+    }
+}
+
+tu_field_t* tu_wnd_getfield(tu_window_t* wndp, int id)
+{
+    tu_field_t fld;
+    fld.id = id;
+    tu_field_t* fldp = jsw_rbfind(wndp->children, &fld);
+    return fldp;
+}
+
 int tu_wnd_addfield(tu_window_t* wndp, tu_field_t* field)
 {
     int rc = jsw_rbinsert(wndp->children, field);
     if (1 == rc) /*insert successfully*/
     {
         tu_field_t* newfield = jsw_rbfind(wndp->children, field);
-        tu_list_pushback(wndp->movable_iter, newfield, 0);
+        tu_listnode_t*  node = 0;
+        tu_list_pushback(wndp->fields, newfield, 0);
+        node = tu_list_last(wndp->fields);
+        newfield->node = node;
         /*active_input*/
         if ( NULL == wndp->active_input )
         {
             if (newfield->enable && newfield->visible)
             {
-                tu_field_t* fldp = tu_listrav_first(wndp->active_iter, wndp->movable_iter);
                 tu_input_t* inp = (tu_input_t*)newfield;
                 inp->first_focus = 1;
                 wndp->active_input = newfield;
-                
-                /*init the active_iter*/
-                while (fldp && fldp != newfield)
-                {
-                    fldp = (tu_field_t*)tu_listrav_next(wndp->active_iter);
-                }
             }
         }
     }
     return rc;
 }
 
+tu_field_t* tu_wnd_getactive(tu_window_t* wndp)
+{
+    return (wndp->active_input);
+}
+
+tu_field_t* tu_wnd_setactive(tu_window_t* wndp, int id)
+{
+    tu_field_t* activep = tu_wnd_getactive(wndp);
+    tu_field_t* newfldp = tu_wnd_getfield(wndp, id);
+    if (NULL == newfldp)
+    {
+        if (newfldp->enable && newfldp->visible)
+        {
+            tu_input_t* inp = (tu_input_t*)wndp->active_input;
+            inp->first_focus = 0;
+            tu_fld_draw(wndp->active_input);
+            
+            wndp->active_input = newfldp;
+            inp = (tu_input_t*)wndp->active_input;
+            inp->first_focus = 1;
+            tu_fld_draw(newfldp);
+        }
+    }
+    return activep;
+}
+
 tu_field_t*     tu_wnd_getfirst(tu_window_t* wndp)
 {
-    tu_field_t* fldp = (tu_field_t*)tu_listrav_first(wndp->itertrav, wndp->movable_iter);
+    wndp->nodes = tu_list_first(wndp->fields);
+    tu_field_t* fldp = (tu_field_t*)tu_list_data(wndp->nodes);
     return fldp;
 }
 
 tu_field_t*     tu_wnd_getlast(tu_window_t* wndp)
 {
-    tu_field_t* fldp = (tu_field_t*)tu_listrav_last(wndp->itertrav, wndp->movable_iter);
+    wndp->nodes = tu_list_last(wndp->fields);
+    tu_field_t* fldp = (tu_field_t*)tu_list_data(wndp->nodes);
     return fldp;
 }
 
 tu_field_t*     tu_wnd_getnext(tu_window_t* wndp)
 {
-    tu_field_t* fldp = (tu_field_t*)tu_listrav_next(wndp->itertrav);
+    wndp->nodes = tu_list_next(wndp->nodes);
+    tu_field_t* fldp = (tu_field_t*)tu_list_data(wndp->nodes);
     return fldp;
 }
 
 tu_field_t*     tu_wnd_getprev(tu_window_t* wndp)
 {
-    tu_field_t* fldp = (tu_field_t*)tu_listrav_prev(wndp->itertrav);
+    wndp->nodes = tu_list_prev(wndp->nodes);
+    tu_field_t* fldp = (tu_field_t*)tu_list_data(wndp->nodes);
     return fldp;
 }
 
@@ -756,5 +913,10 @@ void            tu_wnd_refresh(tu_window_t* wndp)
         }
         fldp = tu_wnd_getnext(wndp);
     }
+}
+
+void tu_wnd_setevent(tu_window_t* wndp, int (*on_event)(int mod, int key, int ch, void* data))
+{
+    wndp->on_event = on_event;
 }
 
