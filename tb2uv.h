@@ -12,8 +12,52 @@ extern "C" {
 #endif
 
 typedef struct tu_field     tu_field_t;     /*common field: label*/
+typedef struct tu_wnditem   tu_wnditem_t;   /**/
+typedef struct tu_label     tu_label_t;     /*input field*/
 typedef struct tu_input     tu_input_t;     /*input field*/
+typedef struct tu_listbox   tu_listbox_t;   /*listbox field*/
+typedef struct tu_header    tu_header_t;    /*listbox header*/
+typedef struct tu_subitem   tu_subitem_t;   /*listbox subitem*/
 typedef struct tu_window    tu_window_t;    /*container*/
+
+struct tu_field
+{
+    int     size;
+    int     type;
+    int     id;
+    int     x;
+    int     y;
+    int     w;
+    int     h;
+    int     fgcolor;
+    int     bgcolor;
+    int     enable;
+    int     visible;
+    int     alignment;
+    int     attribs;
+    char*   text;
+};
+
+struct tu_header
+{
+    int     w;
+    int     fgcolor;
+    int     bgcolor;
+    int     alignment;
+    int     attribs;
+    char*   text;
+};
+
+struct tu_subitem
+{
+    int     fgcolor;
+    int     bgcolor;
+    int     fgsel;
+    int     bgsel;
+    int     attribs;
+    void*   data;
+    char*   text;
+};
 
 /*initialize*/
 int             tu_init();
@@ -39,8 +83,10 @@ void            tu_removeevent(int mod, int key, int ch);
 #define FIELD_HI_BLACK                                      (0x2000)
 #define FIELD_BRIGHT                                        (0x4000)
 #define FIELD_DIM                                           (0x8000)
-
+/*input flags*/
 #define FIELD_INPUT_NOECHO                                  (0x00000001)
+/*listbox flags*/
+#define FIELD_LISTBOX_HIDEHEADER                            (0X00000001)
 /*field->fgcolor, bgcolor, fgdis, bgdis*/
 #define FIELD_DEFAULT                                       (0x0000)
 #define FIELD_BLACK                                         (0x0001)
@@ -65,24 +111,16 @@ void            tu_fillbox(int x, int y, int width, int height, char ch, int fg,
 enum
 {
     FIELD_LABEL,
-    FIELD_INPUT
+    FIELD_INPUT,
+    FIELD_LISTBOX
 };
 
-tu_field_t*     tu_fld_new(int type);
-void            tu_fld_delete(tu_field_t* fldp);
-int             tu_fld_initlabel(tu_field_t* fldp, int id, int x, int y, int width, const char* text);
-int             tu_fld_initinput(tu_field_t* fldp, int id, int x, int y, int width, const char* text);
-
-int             tu_fld_setcolor(tu_field_t* fldp, int fg, int bg);
-int             tu_fld_setattribs(tu_field_t* fldp, int attribs);
-int             tu_fld_settext(tu_field_t* fldp, const char* text);
-int             tu_fld_gettext(tu_field_t* fldp, char* text);
-int             tu_fld_isenable(tu_field_t* fldp);
-void            tu_fld_enable(tu_field_t* fldp, int enable);
-int             tu_fld_isvisible(tu_field_t* fldp);
-void            tu_fld_visible(tu_field_t* fldp, int visible);
+int             tu_fld_initlabel(tu_field_t* fldp,   int id, int x, int y, int width, const char* text);
+int             tu_fld_initinput(tu_field_t* fldp,   int id, int x, int y, int width, const char* text);
+int             tu_fld_initlistbox(tu_field_t* fldp, int id, int x, int y, int width, int height);
 
 int             tu_fld_draw(tu_field_t* fldp);
+
 /*windows*/
 tu_window_t*    tu_wnd_new();
 void            tu_wnd_delete(tu_window_t* wndp);
@@ -98,17 +136,17 @@ void            tu_wnd_delete(tu_window_t* wndp);
   0 if the insertion failed for any reason
   </returns>
 */
-int             tu_wnd_addfield(tu_window_t* wndp, tu_field_t* field);
+tu_wnditem_t*   tu_wnd_addfield(tu_window_t* wndp, tu_field_t* field);
 void            tu_wnd_removefield(tu_window_t* wndp, int id);
-tu_field_t*     tu_wnd_getfield(tu_window_t* wndp, int id);
-tu_field_t*     tu_wnd_getactive(tu_window_t* wndp);
-tu_field_t*     tu_wnd_setactive(tu_window_t* wndp, int id);
+void            tu_wnd_clearfield(tu_window_t* wndp);
+tu_wnditem_t*   tu_wnd_getfield(tu_window_t* wndp, int id);
+tu_wnditem_t*   tu_wnd_getactive(tu_window_t* wndp);
+tu_wnditem_t*   tu_wnd_setactive(tu_window_t* wndp, int id);
 
-
-tu_field_t*     tu_wnd_getfirst(tu_window_t* wndp);
-tu_field_t*     tu_wnd_getlast(tu_window_t* wndp);
-tu_field_t*     tu_wnd_getnext(tu_window_t* wndp);
-tu_field_t*     tu_wnd_getprev(tu_window_t* wndp);
+tu_wnditem_t*   tu_wnd_getfirst(tu_window_t* wndp);
+tu_wnditem_t*   tu_wnd_getlast(tu_window_t* wndp);
+tu_wnditem_t*   tu_wnd_getnext(tu_window_t* wndp);
+tu_wnditem_t*   tu_wnd_getprev(tu_window_t* wndp);
 void            tu_wnd_refresh(tu_window_t* wndp);
 /*
 int (*on_event)(int mod, int key, int ch, int id, void* data);
@@ -123,6 +161,27 @@ returns:
     otherwise - skip the global event and wait for the next event
 */
 void            tu_wnd_setevent(tu_window_t* wndp, int (*on_event)(int mod, int key, int ch, void* data));
+
+/*wnditem*/
+int             tu_wnditem_setcolor(tu_wnditem_t* itemp, int fg, int bg);
+int             tu_wnditem_setattribs(tu_wnditem_t* itemp, int attribs);
+int             tu_wnditem_settext(tu_wnditem_t* itemp, const char* text);
+int             tu_wnditem_gettext(tu_wnditem_t* itemp, char* text);
+int             tu_wnditem_isenable(tu_wnditem_t* itemp);
+void            tu_wnditem_enable(tu_wnditem_t* itemp, int enable);
+int             tu_wnditem_isvisible(tu_wnditem_t* itemp);
+void            tu_wnditem_visible(tu_wnditem_t* itemp, int visible);
+void            tu_wnditem_draw(tu_wnditem_t* itemp);
+/*listbox*/
+void            tu_lbx_reset(tu_listbox_t* lbxp);
+int             tu_lbx_addheader(tu_listbox_t* lbxp, tu_header_t* hdrp, int nheaders);
+int             tu_lbx_add(tu_listbox_t* lbxp, tu_subitem_t* itemp, int nitems);
+int             tu_lbx_remove(tu_listbox_t* lbxp, int idx);
+int             tu_lbx_get(tu_listbox_t* lbxp, int idx, tu_subitem_t* itemp, int nitems);
+int             tu_lbx_set(tu_listbox_t* lbxp, int idx, tu_subitem_t* itemp, int nitems);
+int             tu_lbx_getitem(tu_listbox_t* lbxp, int idx, int col, tu_subitem_t* itemp);
+int             tu_lbx_setitem(tu_listbox_t* lbxp, int idx, int col, tu_subitem_t* itemp);
+void            tu_lbx_clear(tu_listbox_t* lbxp);
 
 #ifdef __cplusplus
 }

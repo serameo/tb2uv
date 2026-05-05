@@ -31,6 +31,7 @@ void            tu_list_popfront ( tu_linklist_t *list, int clone );
 void            tu_list_popback ( tu_linklist_t *list, int clone );
 int             tu_list_erase ( tu_linklist_t *list, void *data, int clone );
 size_t          tu_list_size ( tu_linklist_t *list );
+int             tu_list_remove( tu_linklist_t *list, tu_listnode_t* node, int clone);
 
 tu_listnode_t*  tu_list_first(tu_linklist_t *list);
 tu_listnode_t*  tu_list_last(tu_linklist_t *list);

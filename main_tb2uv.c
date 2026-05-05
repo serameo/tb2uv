@@ -14,32 +14,64 @@ static int on_event(int mod, int key, int ch, void* data)
     return 0;   /*return to the global event*/
 };
 
-static void init()
+void init()
 {
-    tu_window_t* wndp = tu_wnd_new();
-    tu_field_t*  fldp = tu_fld_new(FIELD_LABEL);
-    tu_field_t*  inp  = tu_fld_new(FIELD_INPUT);
+    tu_window_t*    wndp = tu_wnd_new();
+    tu_listbox_t*   lbxp = 0;
+    tu_header_t     headers[4];
+    tu_field_t      fld;
+    tu_wnditem_t*   itemp = 0;
     
-    tu_fld_initlabel(fldp, 10,  0, 0, 30, "PRESS ALT+F3 TO QUIT");
-    tu_fld_setattribs(fldp, FIELD_REVERSE);
-    tu_wnd_addfield(wndp, fldp);
+    tu_fld_initlabel(&fld, 10,  0, 0, 30, "PRESS ALT+F3 TO QUIT");
+    itemp = tu_wnd_addfield(wndp, &fld);
+    tu_wnditem_setattribs(itemp, FIELD_REVERSE);
 
-    tu_fld_initinput(inp,  20, 31, 0, 20, "TYPE ON ME!!");
-    tu_wnd_addfield(wndp, inp);
+    tu_fld_initinput(&fld,  20, 31, 0, 20, "TYPE ON ME!!");
+    tu_wnd_addfield(wndp, &fld);
 
-    tu_fld_initinput(inp,  30, 31, 1, 20, "THIS IS A SECOND INPUT");
-    tu_wnd_addfield(wndp, inp);
+    tu_fld_initinput(&fld,  30, 31, 1, 20, "THIS IS A SECOND INPUT");
+    tu_wnd_addfield(wndp, &fld);
 
-    tu_fld_initinput(inp,  40, 31, 2, 20, "THIS IS A THIRD INPUT");    
-    tu_wnd_addfield(wndp, inp);
+    tu_fld_initinput(&fld,  40, 31, 2, 20, "THIS IS A THIRD INPUT");
+    tu_wnd_addfield(wndp, &fld);
     
-    tu_wnd_refresh(wndp);
+    tu_fld_initlistbox(&fld, 50, 31, 4, 16, 5);
+    lbxp = (tu_listbox_t*)tu_wnd_addfield(wndp, &fld);
+
+    headers[0].w = 4;
+    headers[0].fgcolor = 0;
+    headers[0].bgcolor = 0;
+    headers[0].alignment = FIELD_RIGHT;
+    headers[0].attribs   = 0;
+    headers[0].text = "ID";
+
+    headers[1].w = 10;
+    headers[1].fgcolor = 0;
+    headers[1].bgcolor = 0;
+    headers[1].alignment = 0;
+    headers[1].attribs   = 0;
+    headers[1].text = "NAME";
+
+    headers[2].w = 10;
+    headers[2].fgcolor = 0;
+    headers[2].bgcolor = 0;
+    headers[2].alignment = FIELD_RIGHT;
+    headers[2].attribs   = 0;
+    headers[2].text = "GRADE";
+
+    headers[3].w = 5;
+    headers[3].fgcolor = 0;
+    headers[3].bgcolor = 0;
+    headers[3].alignment = FIELD_RIGHT;
+    headers[3].attribs   = 0;
+    headers[3].text = "AGE";
+    
+    tu_lbx_addheader(lbxp, headers, 4);
+
     tu_wnd_setevent(wndp, on_event);
+    tu_wnd_refresh(wndp);
 
     tu_setwindow(wndp);
-
-    tu_fld_delete(fldp);
-    tu_fld_delete(inp);
 }
 
 int main()
@@ -54,6 +86,5 @@ int main()
     tu_addevent(TB_MOD_ALT, TB_KEY_F3, 0, ID_QUIT);
 
     tu_run();
-    tu_shutdown();
     return 0;
 }
