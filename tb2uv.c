@@ -92,11 +92,11 @@ struct tu_input
     /*focus*/
     int     first_focus;
     /*cursor*/
-    int  xcur;
-    int  ycur;
+    int     xcur;
+    int     ycur;
     /*position*/
-    int  xpos;
-    int  ypos;
+    int     xpos;
+    int     ypos;
     /*flags*/
     unsigned int flags;
 };
@@ -116,8 +116,6 @@ struct tu_listsubitem
 {
     int     fgcolor;
     int     bgcolor;
-    int     fgsel;
-    int     bgsel;
     int     attribs;
     void*   data;
     char    text[FIELD_MAX_TEXT + 1];
@@ -187,13 +185,12 @@ static tu_wnditem_t* tu_wnd__getinput(tu_window_t* wndp)
     return (wndp ? wndp->active_input : NULL);
 }
 
-int tu_input__draw(tu_wnditem_t* itemp);
+void tu_input__draw(tu_wnditem_t* itemp);
+void tu_listbox__draw(tu_wnditem_t* itemp);
 
 static tu_wnditem_t* tu_wnd__getnextinput(tu_window_t* wndp, int dir)
 {
     tu_wnditem_t* itemp = (wndp ? wndp->active_input : NULL);
-    /*tu_listtrav_t* iter = tu_listtrav_new();
-    tu_listtrav_clone(iter, wndp->active_iter);*/
     tu_listnode_t*  node = 0;
     
     while (itemp)
@@ -220,15 +217,20 @@ static tu_wnditem_t* tu_wnd__getnextinput(tu_window_t* wndp, int dir)
     /*moved successfully*/
     if (itemp && itemp != wndp->active_input)
     {
-        tu_input_t* inp = (tu_input_t*)wndp->active_input;
-        inp->first_focus = 0;
-        tu_input__draw(wndp->active_input);
+        tu_input_t* inp = 0;
+        if (wndp->active_input->type == FIELD_INPUT)
+        {
+            inp = (tu_input_t*)wndp->active_input;
+            inp->first_focus = 0;
+            tu_input__draw(wndp->active_input);
+        }
         
-        /*tu_listtrav_clone(wndp->active_iter, iter);*/
-        
-        inp = (tu_input_t*)itemp;
-        inp->first_focus = 1;
-        tu_input__draw(itemp);
+        if (itemp->type == FIELD_INPUT)
+        {
+            inp = (tu_input_t*)itemp;
+            inp->first_focus = 1;
+            tu_input__draw(itemp);
+        }
         
         wndp->active_input = itemp;
     }
@@ -251,6 +253,11 @@ void tu_wnditem_draw(tu_wnditem_t* itemp)
     if (itemp->type == FIELD_INPUT)
     {
         tu_input__draw(itemp);
+        return;
+    }
+    else if (itemp->type == FIELD_LISTBOX)
+    {
+        tu_listbox__draw(itemp);
         return;
     }
     tu_drawtext(itemp->x, itemp->y, itemp->w, 
@@ -671,7 +678,7 @@ void tu_wnditem_visible(tu_wnditem_t* itemp, int visible)
     itemp->visible = visible;
 }
 
-int tu_input__draw(tu_wnditem_t* itemp)
+void tu_input__draw(tu_wnditem_t* itemp)
 {
     tu_input_t* input = (tu_input_t*)itemp;
     int  x = itemp->x;
@@ -711,10 +718,10 @@ int tu_input__draw(tu_wnditem_t* itemp)
 
 int tu_fld_draw(tu_field_t* fldp)
 {
-    if (fldp->visible == 0)
+    /*if (fldp->visible == 0)
     {
         return 0;
-    }
+    }*/
     /*if (fldp->type == FIELD_INPUT)
     {
         tu_input__draw(fldp);
@@ -793,12 +800,16 @@ int tu_input__process_event(tu_wnditem_t* itemp, struct tb_event* ev)
     return 1;
 }
 
+int tu_listbox__process_event(tu_wnditem_t* itemp, struct tb_event* ev);
+
 int field_process_event(tu_wnditem_t* itemp, struct tb_event* evp)
 {
     switch (itemp->type)
     {
         case FIELD_INPUT:
             return tu_input__process_event(itemp, evp);
+        case FIELD_LISTBOX:
+            return tu_listbox__process_event(itemp, evp);
     }
     return 0;
 }
@@ -1142,8 +1153,6 @@ int tu_lbx_add(tu_listbox_t* lbxp, tu_subitem_t* itemp, int nitems)
     {
         subitemp[i].fgcolor      = itemp[i].fgcolor;
         subitemp[i].bgcolor      = itemp[i].bgcolor;
-        subitemp[i].fgsel        = itemp[i].fgsel;
-        subitemp[i].bgsel        = itemp[i].bgsel;
         subitemp[i].data         = itemp[i].data;
         strcpy(subitemp[i].text, itemp[i].text);
     }
@@ -1171,6 +1180,339 @@ tu_listsubitem_t*   tu_lbx__get(tu_listbox_t* lbxp, int idx)
         subitemp = (tu_listsubitem_t*)tu_list_data(node);
     }
     return subitemp; 
+}
+
+#if 0
+struct tu_listheader
+{
+    int     w;
+    int     fgcolor;
+    int     bgcolor;
+    int     alignment;
+    int     attribs;
+    char    text[FIELD_MAX_TEXT + 1];
+};
+typedef struct tu_listheader tu_listheader_t;
+
+struct tu_listsubitem
+{
+    int     fgcolor;
+    int     bgcolor;
+    int     attribs;
+    void*   data;
+    char    text[FIELD_MAX_TEXT + 1];
+    tu_listnode_t*    node;
+};
+typedef struct tu_listsubitem tu_listsubitem_t;
+#endif
+
+int tu_listbox__maxcol(tu_listbox_t* lbxp)
+{
+    tu_wnditem_t* itemp = &lbxp->item;
+    int i = 0;
+    int w = itemp->w;
+    int cw = 0;
+    tu_listheader_t* hdrp = 0;
+
+    for (i = lbxp->curcol; i < lbxp->nheaders; ++i)
+    {
+        if (cw > w)
+        {
+            return (i + 1);
+        }
+        hdrp = &lbxp->hdrp[i];
+        cw += hdrp->w;
+    }
+    return (lbxp->nheaders);
+}
+
+/*
+tu_listbox__canscrollright()
+    return: the last column could be scrolled
+*/
+int tu_listbox__canscrollright(tu_listbox_t* lbxp, int col)
+{
+    tu_wnditem_t* itemp = &lbxp->item;
+    int i = 0;
+    int w = itemp->w;
+    int cw = 0;
+    tu_listheader_t* hdrp = 0;
+
+    if (col <= 0)
+    {
+        return 1;
+    }
+    else if (col >= lbxp->nheaders)
+    {
+        return 0;
+    }
+    for (i = col; i < lbxp->nheaders; ++i)
+    {
+        hdrp = &lbxp->hdrp[i];
+        if (cw + hdrp->w > w)
+        {
+            break;
+        }
+        cw += hdrp->w;
+    }
+    return (i - 1);
+}
+
+int tu_listbox__itemspage(tu_listbox_t* lbxp)
+{
+    tu_wnditem_t* itemp = &lbxp->item;
+    int height = itemp->h;
+    if (FIELD_LISTBOX_HIDEHEADER & lbxp->flags)
+    {
+        height = height;
+    }
+    else
+    {
+        height -= 1;
+    }
+    return height;
+}
+
+int tu_listbox__getpage(tu_listbox_t* lbxp, int row)
+{
+    int items = tu_listbox__itemspage(lbxp);
+    int pages = (items > 0 ? lbxp->nrows / items : 0);
+    if (items <= 0)
+    {
+        /*height too small*/
+        return -1;
+    }
+    if (row < 0)
+    {
+        /*out-of-bound*/
+        return 0;
+    }
+    else if (row >= lbxp->nrows)
+    {
+        return pages;
+    }
+    return (row / items);
+}
+/*
+tu_listbox__getfirstvisible()
+    return: the first visible row of the page
+*/
+int tu_listbox__getfirstvisible(tu_listbox_t* lbxp)
+{
+    int items = tu_listbox__itemspage(lbxp);
+    int curpage = 0;
+    
+    if (items <= 0)
+    {
+        return -1;
+    }
+    curpage = tu_listbox__getpage(lbxp, lbxp->currow);
+    if (curpage < 0)
+    {
+        return curpage;
+    }
+    return (curpage * items);
+}
+
+int tu_listbox__getlastvisible(tu_listbox_t* lbxp)
+{
+    int items = tu_listbox__itemspage(lbxp);
+    int row = tu_listbox__getfirstvisible(lbxp);
+    if (row < 0)
+    {
+        return row;
+    }
+    return (row + items);
+}
+
+int tu_listbox__process_event(tu_wnditem_t* itemp, struct tb_event* ev)
+{
+    tu_listbox_t* lbxp = (tu_listbox_t*)itemp;
+    int items = tu_listbox__itemspage(lbxp);
+    int currow = lbxp->currow;
+    int curcol = lbxp->curcol;
+
+    if (ev->key)
+    {
+        switch (ev->key)
+        {
+            case TB_KEY_ARROW_UP:
+                --currow;
+                break;
+            case TB_KEY_ARROW_DOWN:
+                ++currow;
+                break;
+            case TB_KEY_PGUP:
+                currow -= items;
+                break;
+            case TB_KEY_PGDN:
+                currow += items;
+                break;
+            case TB_KEY_ARROW_LEFT:
+                --curcol;
+                break;
+            case TB_KEY_ARROW_RIGHT:
+                ++curcol;
+                break;
+        }
+        if (currow < 0)
+        {
+            currow = 0;
+        }
+        else if (currow >= lbxp->nrows)
+        {
+            currow = lbxp->nrows - 1;
+        }
+        if (curcol < 0)
+        {
+            curcol = 0;
+        }
+        else if (curcol >= lbxp->nheaders)
+        {
+            curcol = lbxp->nheaders - 1;
+        }
+
+        lbxp->curcol = curcol;
+        lbxp->currow = currow;
+        
+        tu_listbox__draw(itemp);
+    }
+    return 1;
+}
+
+void tu_listbox__drawheader(tu_listbox_t* lbxp)
+{
+    tu_wnditem_t* itemp = &lbxp->item;
+    int i = 0;
+    int x = itemp->x;
+    int y = itemp->y;
+    int w = itemp->w;
+    int h = itemp->h;
+    int cw = 0;
+    tu_listheader_t* hdrp = 0;
+    
+    /*fill blank to cleanup the line*/
+    tu_fillbox(x, y, w, 1, ' ', 0, 0, 0);
+    
+    /*fill each column header*/
+    for (i = lbxp->curcol; i < lbxp->nheaders; ++i)
+    {
+        hdrp = &lbxp->hdrp[i];
+        if (cw + hdrp->w > w)
+        {
+            tu_drawtext(x, y, (w - cw), 
+                hdrp->text, 
+                hdrp->fgcolor, hdrp->bgcolor, 
+                hdrp->alignment, 
+                hdrp->attribs | FIELD_UNDERLINE, 0);
+            break;
+        }
+        
+        tu_drawtext(x, y, hdrp->w, 
+            hdrp->text, 
+            hdrp->fgcolor, hdrp->bgcolor, 
+            hdrp->alignment, 
+            hdrp->attribs | FIELD_UNDERLINE, 0);
+
+        cw += hdrp->w;
+        x  += hdrp->w;
+    }
+}
+
+void tu_listbox__drawrows(tu_listbox_t* lbxp, int y)
+{
+    tu_wnditem_t* itemp = &lbxp->item;
+    int i = 0;
+    int x = itemp->x;
+    /*int y = itemp->y;*/
+    int w = itemp->w;
+    int h = itemp->h;
+    int cw = 0;
+    tu_listheader_t* hdrp = 0;
+    tu_listsubitem_t* subitemp = 0;
+    int startrow = tu_listbox__getfirstvisible(lbxp);
+    int endrow   = tu_listbox__getlastvisible(lbxp);
+    int nitems   = tu_listbox__itemspage(lbxp);
+    int j = 0;
+    int currow   = lbxp->currow;
+        
+    /*fill each row*/
+    for (j = 0; j < nitems; ++j)
+    {
+        x  = itemp->x;
+        cw = 0;
+        /*fill blank to cleanup the line*/
+        tu_fillbox(x, y + j, w, 1, ' ', 0, 0, 0);
+        if (startrow + j >= lbxp->nrows)
+        {
+            continue; /*just filled the blank*/
+        }
+        subitemp = tu_lbx__get(lbxp, startrow + j);
+        /*fill each column header*/
+        for (i = lbxp->curcol; i < lbxp->nheaders; ++i)
+        {
+            hdrp = &lbxp->hdrp[i];
+            if (cw + hdrp->w > w)
+            {
+                if (currow == (startrow + j))
+                {
+                    tu_drawtext(x, y + j, (w - cw), 
+                        subitemp[i].text, 
+                        subitemp[i].fgcolor, subitemp[i].bgcolor, 
+                        hdrp->alignment, 
+                        hdrp->attribs | FIELD_REVERSE, 0);
+                }
+                else
+                {
+                    tu_drawtext(x, y + j, (w - cw), 
+                        subitemp[i].text, 
+                        subitemp[i].fgcolor, subitemp[i].bgcolor, 
+                        hdrp->alignment, 
+                        hdrp->attribs, 0);
+                }
+                break;
+            }
+            /*draw item*/
+            if (currow == (startrow + j))
+            {
+                tu_drawtext(x, y + j, hdrp->w, 
+                    subitemp[i].text, 
+                    subitemp[i].fgcolor, subitemp[i].bgcolor, 
+                    hdrp->alignment, 
+                    hdrp->attribs | FIELD_REVERSE, 0);
+            }
+            else
+            {
+                tu_drawtext(x, y + j, hdrp->w, 
+                    subitemp[i].text, 
+                    subitemp[i].fgcolor, subitemp[i].bgcolor, 
+                    hdrp->alignment, 
+                    hdrp->attribs, 0);
+            }
+
+            cw += hdrp->w;
+            x  += hdrp->w;
+        }
+    }
+}
+
+void tu_listbox__draw(tu_wnditem_t* itemp)
+{
+    tu_listbox_t* lbxp = (tu_listbox_t*)itemp;
+    int  y = itemp->y;
+    unsigned int flags = lbxp->flags;
+    
+    if (FIELD_LISTBOX_HIDEHEADER & lbxp->flags)
+    {
+        tu_listbox__drawrows(lbxp, y);
+    }
+    else
+    {
+        tu_listbox__drawheader(lbxp);
+        tu_listbox__drawrows(lbxp, y + 1);
+    }
+    
+    tb_present();
 }
 
 int tu_lbx_remove(tu_listbox_t* lbxp, int idx)
@@ -1209,8 +1551,6 @@ int   tu_lbx_get(tu_listbox_t* lbxp, int idx, tu_subitem_t* itemp, int nitems)
         {
             itemp[i].fgcolor    = subitemp[i].fgcolor;
             itemp[i].bgcolor    = subitemp[i].bgcolor;
-            itemp[i].fgsel      = subitemp[i].fgsel;
-            itemp[i].bgsel      = subitemp[i].bgsel;
             itemp[i].data       = subitemp[i].data;
             strcpy(itemp[i].text, subitemp[i].text);
         }
@@ -1236,8 +1576,6 @@ int tu_lbx_set(tu_listbox_t* lbxp, int idx, tu_subitem_t* itemp, int nitems)
         {
             subitemp[i].fgcolor      = itemp[i].fgcolor;
             subitemp[i].bgcolor      = itemp[i].bgcolor;
-            subitemp[i].fgsel        = itemp[i].fgsel;
-            subitemp[i].bgsel        = itemp[i].bgsel;
             subitemp[i].data         = itemp[i].data;
             strcpy(subitemp[i].text, itemp[i].text);
         }
@@ -1257,8 +1595,6 @@ int tu_lbx_setitem(tu_listbox_t* lbxp, int idx, int col, tu_subitem_t* itemp)
     {
         subitemp[col].fgcolor   = itemp->fgcolor;
         subitemp[col].bgcolor   = itemp->bgcolor;
-        subitemp[col].fgsel     = itemp->fgsel;
-        subitemp[col].bgsel     = itemp->bgsel;
         subitemp[col].data      = itemp->data;
         strcpy(subitemp->text, itemp->text);
     }
@@ -1277,8 +1613,6 @@ int tu_lbx_getitem(tu_listbox_t* lbxp, int idx, int col, tu_subitem_t* itemp)
     {
         itemp->fgcolor = subitemp[col].fgcolor;
         itemp->bgcolor = subitemp[col].bgcolor;
-        itemp->fgsel   = subitemp[col].fgsel;
-        itemp->bgsel   = subitemp[col].bgsel;
         itemp->data    = subitemp[col].data;
         strcpy(itemp->text, subitemp->text);
     }
@@ -1303,7 +1637,7 @@ void tu_lbx_clear(tu_listbox_t* lbxp)
     }
     lbxp->nrows     = 0;
     lbxp->currow    = -1;
-    lbxp->curcol    = -1;
+    lbxp->curcol    = 0;
 }
 
 void tu_lbx_reset(tu_listbox_t* lbxp)
@@ -1319,5 +1653,5 @@ void tu_lbx_reset(tu_listbox_t* lbxp)
     }
     memset(lbxp, 0, sizeof(struct tu_listbox));
     lbxp->currow    = -1;
-    lbxp->curcol    = -1;
+    lbxp->curcol    = 0;
 }

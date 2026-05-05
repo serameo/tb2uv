@@ -21,6 +21,7 @@ void init()
     tu_header_t     headers[4];
     tu_field_t      fld;
     tu_wnditem_t*   itemp = 0;
+    tu_subitem_t    subitem[4];
     
     tu_fld_initlabel(&fld, 10,  0, 0, 30, "PRESS ALT+F3 TO QUIT");
     itemp = tu_wnd_addfield(wndp, &fld);
@@ -35,7 +36,7 @@ void init()
     tu_fld_initinput(&fld,  40, 31, 2, 20, "THIS IS A THIRD INPUT");
     tu_wnd_addfield(wndp, &fld);
     
-    tu_fld_initlistbox(&fld, 50, 31, 4, 16, 5);
+    tu_fld_initlistbox(&fld, 50, 31, 4, 12, 5);
     lbxp = (tu_listbox_t*)tu_wnd_addfield(wndp, &fld);
 
     headers[0].w = 4;
@@ -67,6 +68,56 @@ void init()
     headers[3].text = "AGE";
     
     tu_lbx_addheader(lbxp, headers, 4);
+    
+    subitem[0].fgcolor  = 0;
+    subitem[0].bgcolor  = 0;
+    subitem[0].attribs  = 0;
+    subitem[0].data     = 0;
+    subitem[0].text     = "1";
+
+    subitem[1].fgcolor  = 0;
+    subitem[1].bgcolor  = 0;
+    subitem[1].attribs  = 0;
+    subitem[1].data     = 0;
+    subitem[1].text     = "Tekari";
+
+    subitem[2].fgcolor  = 0;
+    subitem[2].bgcolor  = 0;
+    subitem[2].attribs  = 0;
+    subitem[2].data     = 0;
+    subitem[2].text     = "4";
+
+    subitem[3].fgcolor  = 0;
+    subitem[3].bgcolor  = 0;
+    subitem[3].attribs  = 0;
+    subitem[3].data     = 0;
+    subitem[3].text     = "10";
+    
+    tu_lbx_add(lbxp, subitem, 4);
+
+    subitem[0].text     = "2";
+    subitem[1].text     = "Tekaruj";
+    subitem[2].text     = "3";
+    subitem[3].text     = "5";
+    tu_lbx_add(lbxp, subitem, 4);
+
+    subitem[0].text     = "3";
+    subitem[1].text     = "Tekarin";
+    subitem[2].text     = "2";
+    subitem[3].text     = "2";
+    tu_lbx_add(lbxp, subitem, 4);
+
+    subitem[0].text     = "4";
+    subitem[1].text     = "Tekaroj";
+    subitem[2].text     = "1";
+    subitem[3].text     = "1";
+    tu_lbx_add(lbxp, subitem, 4);
+
+    subitem[0].text     = "5";
+    subitem[1].text     = "Tekarun";
+    subitem[2].text     = "0";
+    subitem[3].text     = "3/12";
+    tu_lbx_add(lbxp, subitem, 4);
 
     tu_wnd_setevent(wndp, on_event);
     tu_wnd_refresh(wndp);

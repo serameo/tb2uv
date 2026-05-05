@@ -52,8 +52,6 @@ struct tu_subitem
 {
     int     fgcolor;
     int     bgcolor;
-    int     fgsel;
-    int     bgsel;
     int     attribs;
     void*   data;
     char*   text;
