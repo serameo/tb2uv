@@ -19,6 +19,7 @@ typedef struct tu_listbox   tu_listbox_t;   /*listbox field*/
 typedef struct tu_header    tu_header_t;    /*listbox header*/
 typedef struct tu_subitem   tu_subitem_t;   /*listbox subitem*/
 typedef struct tu_window    tu_window_t;    /*container*/
+typedef struct tu_notify    tu_notify_t;    /*notified by tu_wnditem_t */
 
 struct tu_field
 {
@@ -57,15 +58,19 @@ struct tu_subitem
     char*   text;
 };
 
+struct tu_notify
+{
+    int     id;     /*notify from the object id*/
+    void*   data;   /*pointer to the tu_wnditem_t */
+    int     code;
+};
 /*initialize*/
 int             tu_init();
 void            tu_shutdown();
-void            tu_setcbreak(int cbreak);
 int             tu_run();
 tu_window_t*    tu_setwindow(tu_window_t* wnd);
 tu_window_t*    tu_getwindow();
-int             tu_addevent(int mod, int key, int ch, int id);
-void            tu_removeevent(int mod, int key, int ch);
+
 
 #define FIELD_MAX_TEXT                                      (128)
 /*field->alignment (only one)*/
@@ -83,6 +88,10 @@ void            tu_removeevent(int mod, int key, int ch);
 #define FIELD_DIM                                           (0x8000)
 /*input flags*/
 #define FIELD_INPUT_NOECHO                                  (0x00000001)
+#define FIELD_INPUT_PASSWORD                                (0x00000002)
+#define FIELD_INPUT_NUMBER                                  (0x00000004)
+#define FIELD_INPUT_HEXNUMBER                               (0x00000008)
+#define FIELD_INPUT_CAPITAL                                 (0x00000010)
 /*listbox flags*/
 #define FIELD_LISTBOX_HIDEHEADER                            (0X00000001)
 /*field->fgcolor, bgcolor, fgdis, bgdis*/
@@ -114,8 +123,8 @@ enum
 };
 
 int             tu_fld_initlabel(tu_field_t* fldp,   int id, int x, int y, int width, const char* text);
-int             tu_fld_initinput(tu_field_t* fldp,   int id, int x, int y, int width, const char* text);
-int             tu_fld_initlistbox(tu_field_t* fldp, int id, int x, int y, int width, int height);
+int             tu_fld_initinput(tu_field_t* fldp,   int id, int x, int y, int width);
+int             tu_fld_initlistbox(tu_field_t* fldp, int id, int x, int y, int width, int height, const char* text);
 
 int             tu_fld_draw(tu_field_t* fldp);
 
@@ -158,28 +167,55 @@ returns:
     0 - to continue the global event
     otherwise - skip the global event and wait for the next event
 */
-void            tu_wnd_setevent(tu_window_t* wndp, int (*on_event)(int mod, int key, int ch, void* data));
+enum
+{
+    FIELD_EV_KEYDOWN,   /*all key down probe*/
+    FIELD_EV_BLUR,      /*sent by its child*/
+    FIELD_EV_FOCUS,     /*sent by its child*/
+    FIELD_EV_NOTIFY     /*sent by its child (e.g. pressed ENTER, item changed)*/
+};
+enum
+{
+    FIELD_NOTIFY_PRESSEDENTER,
+    FIELD_NOTIFY_ITEMCHANGED
+};
+
+void            tu_wnd_setevent(tu_window_t* wndp, int event,
+                    int (*on_event)(int mod, int key, int ch, tu_notify_t* notify));
 
 /*wnditem*/
 int             tu_wnditem_setcolor(tu_wnditem_t* itemp, int fg, int bg);
 int             tu_wnditem_setattribs(tu_wnditem_t* itemp, int attribs);
 int             tu_wnditem_settext(tu_wnditem_t* itemp, const char* text);
-int             tu_wnditem_gettext(tu_wnditem_t* itemp, char* text);
+int             tu_wnditem_gettext(tu_wnditem_t* itemp, char* text, int len);
 int             tu_wnditem_isenable(tu_wnditem_t* itemp);
 void            tu_wnditem_enable(tu_wnditem_t* itemp, int enable);
 int             tu_wnditem_isvisible(tu_wnditem_t* itemp);
 void            tu_wnditem_visible(tu_wnditem_t* itemp, int visible);
 void            tu_wnditem_draw(tu_wnditem_t* itemp);
+tu_window_t*    tu_wnditem_getparent(tu_wnditem_t* itemp);
+void            tu_wnditem_setflags(tu_wnditem_t* itemp, unsigned int flags);
+unsigned int    tu_wnditem_getflags(tu_wnditem_t* itemp);
+
+/*input*/
+void            tu_inp_setlimit(tu_input_t* inp, int limit);
+int             tu_inp_setpassword(tu_input_t* inp, const char* password);
+int             tu_inp_getpassword(tu_input_t* inp, char* password, int len);
+int             tu_inp_setnumber(tu_input_t* inp, int number);
+int             tu_inp_getnumber(tu_input_t* inp);
 /*listbox*/
 void            tu_lbx_reset(tu_listbox_t* lbxp);
 int             tu_lbx_addheader(tu_listbox_t* lbxp, tu_header_t* hdrp, int nheaders);
 int             tu_lbx_add(tu_listbox_t* lbxp, tu_subitem_t* itemp, int nitems);
-int             tu_lbx_remove(tu_listbox_t* lbxp, int idx);
-int             tu_lbx_get(tu_listbox_t* lbxp, int idx, tu_subitem_t* itemp, int nitems);
-int             tu_lbx_set(tu_listbox_t* lbxp, int idx, tu_subitem_t* itemp, int nitems);
-int             tu_lbx_getitem(tu_listbox_t* lbxp, int idx, int col, tu_subitem_t* itemp);
-int             tu_lbx_setitem(tu_listbox_t* lbxp, int idx, int col, tu_subitem_t* itemp);
+int             tu_lbx_remove(tu_listbox_t* lbxp, int row);
+int             tu_lbx_get(tu_listbox_t* lbxp, int row, tu_subitem_t* itemp, int nitems);
+int             tu_lbx_set(tu_listbox_t* lbxp, int row, tu_subitem_t* itemp, int nitems);
+int             tu_lbx_getitem(tu_listbox_t* lbxp, int row, int col, tu_subitem_t* itemp);
+int             tu_lbx_setitem(tu_listbox_t* lbxp, int row, int col, tu_subitem_t* itemp);
 void            tu_lbx_clear(tu_listbox_t* lbxp);
+int             tu_lbx_setcursel(tu_listbox_t* lbxp, int row, int redraw);
+int             tu_lbx_getcursel(tu_listbox_t* lbxp);
+void            tu_lbx_sort(tu_listbox_t* lbxp, int col);
 
 #ifdef __cplusplus
 }
