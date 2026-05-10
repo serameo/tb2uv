@@ -11,6 +11,29 @@ Date:       27-APR-2026
 extern "C" {
 #endif
 
+/*field type*/
+enum
+{
+    FIELD_LABEL,        /*a label object*/
+    FIELD_INPUT,        /*an input object*/
+    FIELD_LISTBOX       /*a listbox object - having column headers and rows*/
+};
+
+enum
+{
+    FIELD_EV_KEYDOWN,   /*all key down probe*/
+    FIELD_EV_BLUR,      /*sent by its child*/
+    FIELD_EV_FOCUS,     /*sent by its child*/
+    FIELD_EV_NOTIFY     /*sent by its child (e.g. pressed ENTER, item changed)*/
+};
+enum
+{
+    FIELD_NOTIFY_PRESSEDENTER,
+    FIELD_NOTIFY_ITEMCHANGING,
+    FIELD_NOTIFY_ITEMCHANGED
+};
+
+
 typedef struct tu_field     tu_field_t;     /*common field: label*/
 typedef struct tu_wnditem   tu_wnditem_t;   /**/
 typedef struct tu_label     tu_label_t;     /*input field*/
@@ -23,19 +46,20 @@ typedef struct tu_notify    tu_notify_t;    /*notified by tu_wnditem_t */
 
 struct tu_field
 {
-    int     size;
-    int     type;
-    int     id;
-    int     x;
-    int     y;
-    int     w;
-    int     h;
-    int     fgcolor;
-    int     bgcolor;
-    int     enable;
-    int     visible;
-    int     alignment;
-    int     attribs;
+    int     size;       /*size of the memory allocation for each field type*/
+    int     type;       /*type of the field type, FIELD_LABEL, FIELD_INPUT, FIELD_LISTBOX*/
+    int     id;         /*the unique id of the field*/
+    int     x;          /*x position*/
+    int     y;          /*y position*/
+    int     w;          /*width*/
+    int     h;          /*height*/
+    int     fgcolor;    /*foreground color*/
+    int     bgcolor;    /*background color*/
+    int     enable;     /*0 - disable, otherwise enable*/
+    int     visible;    /*0 - hide, otherwise show*/
+    int     alignment;  /*see FIELD_LEFT, FIELD_CENTER, FIELD_RIGHT*/
+    int     attribs;    /*see FIELD_BOLD, FIELD_ITALIC, etc*/
+    void*   data;       /*user data*/
     char*   text;
 };
 
@@ -54,7 +78,7 @@ struct tu_subitem
     int     fgcolor;
     int     bgcolor;
     int     attribs;
-    void*   data;
+    void*   data;       /*user data*/
     char*   text;
 };
 
@@ -62,15 +86,8 @@ struct tu_notify
 {
     int     id;     /*notify from the object id*/
     void*   data;   /*pointer to the tu_wnditem_t */
-    int     code;
+    int     code;   /*notify code from the object, e.g. FIELD_NOTIFY_PRESSEDENTER*/
 };
-/*initialize*/
-int             tu_init();
-void            tu_shutdown();
-int             tu_run();
-tu_window_t*    tu_setwindow(tu_window_t* wnd);
-tu_window_t*    tu_getwindow();
-
 
 #define FIELD_MAX_TEXT                                      (128)
 /*field->alignment (only one)*/
@@ -113,73 +130,142 @@ void            tu_drawline(int x, int y, int width, char ch, int fg, int bg, in
 void            tu_drawvline(int x, int y, int height, char ch, int fg, int bg, int attribs, int redraw);
 void            tu_drawbox(int x, int y, int width, int height, char chhorz, char chvert, char chcorner, int fg, int bg, int attribs, int redraw);
 void            tu_fillbox(int x, int y, int width, int height, char ch, int fg, int bg, int redraw);
+
+/*initialize*/
+/**
+    <summary>
+    To initialize the environment
+    </summary>
+*/
+int             tu_init();
+/*
+tu_run()
+    To run the system environment
+*/
+int             tu_run();
+/**
+    <summary>
+    To shutdown the system enviroment
+    </summary>
+*/
+void            tu_shutdown();
+/**
+    <summary>
+    To the the main active window object
+    </summary>
+*/
+tu_window_t*    tu_setwindow(tu_window_t* wnd);
+tu_window_t*    tu_getwindow();
+
 /*field*/
-/*field type*/
-enum
-{
-    FIELD_LABEL,
-    FIELD_INPUT,
-    FIELD_LISTBOX
-};
-
-int             tu_fld_initlabel(tu_field_t* fldp,   int id, int x, int y, int width, const char* text);
-int             tu_fld_initinput(tu_field_t* fldp,   int id, int x, int y, int width);
-int             tu_fld_initlistbox(tu_field_t* fldp, int id, int x, int y, int width, int height, const char* text);
-
+/**
+    <summary>
+    tu_fld_initlabel() - To initialize the label object
+    tu_fld_initinput() - To initialize the input object
+    tu_fld_initlistbox() - To initialize the listbox object
+    </summary>
+*/
+int             tu_fld_initlabel(tu_field_t* fldp,   int id, int x, int y, int width, const char* text, void* data);
+int             tu_fld_initinput(tu_field_t* fldp,   int id, int x, int y, int width, void* data);
+int             tu_fld_initlistbox(tu_field_t* fldp, int id, int x, int y, int width, int height, const char* text, void* data);
+/**
+    <summary>
+    To draw a generic field object
+    </summary>
+*/
 int             tu_fld_draw(tu_field_t* fldp);
 
 /*windows*/
+/**
+    <summary>
+    To allocate the new window object.
+    If the new window allocated and set it as the mainly active window,
+it will be automatically deleted
+    Otherwise call tu_wnd_delete() by the program need
+    </summary>
+*/
 tu_window_t*    tu_wnd_new();
+/**
+    <summary>
+    To de-allocated the window object that was allocated by tu_wnd_new()
+    </summary>
+*/
 void            tu_wnd_delete(tu_window_t* wndp);
 /**
-  <summary>
-  Insert a copy of the user-specified
-  data into a red black tree
-  <summary>
-  <param name="wndp">The window pointer to insert into</param>
-  <param name="field">The field value to insert</param>
-  <returns>
-  1 if the value was inserted successfully,
-  0 if the insertion failed for any reason
-  </returns>
+    <summary>
+    Insert a copy of the user-specified
+    data into a red black tree
+    <summary>
+    <param name="wndp">The window pointer to insert into</param>
+    <param name="field">The field value to insert</param>
+    <returns>
+    1 if the value was inserted successfully,
+    0 if the insertion failed for any reason
+    </returns>
 */
 tu_wnditem_t*   tu_wnd_addfield(tu_window_t* wndp, tu_field_t* field);
+/**
+    <summary>
+    To remove the item from the window
+    </summary>
+*/
 void            tu_wnd_removefield(tu_window_t* wndp, int id);
+/**
+    <summary>
+    To remove all items from the window
+    </summary>
+*/
 void            tu_wnd_clearfield(tu_window_t* wndp);
+/**
+    <summary>
+    To get the item from the window by ID
+    </summary>
+*/
 tu_wnditem_t*   tu_wnd_getfield(tu_window_t* wndp, int id);
+/**
+    <summary>
+    To get the active item from the window
+    </summary>
+*/
 tu_wnditem_t*   tu_wnd_getactive(tu_window_t* wndp);
+/**
+    <summary>
+    To set the active item to the window by ID
+    </summary>
+*/
 tu_wnditem_t*   tu_wnd_setactive(tu_window_t* wndp, int id);
 
+/**
+    <summary>
+    To get the item object from the parent window
+    </summary>
+*/
 tu_wnditem_t*   tu_wnd_getfirst(tu_window_t* wndp);
 tu_wnditem_t*   tu_wnd_getlast(tu_window_t* wndp);
 tu_wnditem_t*   tu_wnd_getnext(tu_window_t* wndp);
 tu_wnditem_t*   tu_wnd_getprev(tu_window_t* wndp);
+/**
+    <summary>
+    To draw all items in the window
+    </summary>
+*/
 void            tu_wnd_refresh(tu_window_t* wndp);
-/*
+/**
+    <summary>
 int (*on_event)(int mod, int key, int ch, int id, void* data);
-parameters:
+    </summary>
+    <parameters>
     mod     - TB_MOD_xxx (see termbox2.h)
     key     - TB_KEY_xxx (see termbox2.h)
     ch      - unicode char
     id      - user defined
     data    - system will always send to the current active window pointer
-returns:
+    </parameters>
+    <returns>
     0 - to continue the global event
     otherwise - skip the global event and wait for the next event
+    </returns>
 */
-enum
-{
-    FIELD_EV_KEYDOWN,   /*all key down probe*/
-    FIELD_EV_BLUR,      /*sent by its child*/
-    FIELD_EV_FOCUS,     /*sent by its child*/
-    FIELD_EV_NOTIFY     /*sent by its child (e.g. pressed ENTER, item changed)*/
-};
-enum
-{
-    FIELD_NOTIFY_PRESSEDENTER,
-    FIELD_NOTIFY_ITEMCHANGED
-};
-
 void            tu_wnd_setevent(tu_window_t* wndp, int event,
                     int (*on_event)(int mod, int key, int ch, tu_notify_t* notify));
 
@@ -196,6 +282,8 @@ void            tu_wnditem_draw(tu_wnditem_t* itemp);
 tu_window_t*    tu_wnditem_getparent(tu_wnditem_t* itemp);
 void            tu_wnditem_setflags(tu_wnditem_t* itemp, unsigned int flags);
 unsigned int    tu_wnditem_getflags(tu_wnditem_t* itemp);
+void*           tu_wnditem_setdata(tu_wnditem_t* itemp, void* data);
+void*           tu_wnditem_getdata(tu_wnditem_t* itemp);
 
 /*input*/
 void            tu_inp_setlimit(tu_input_t* inp, int limit);
@@ -215,7 +303,7 @@ int             tu_lbx_setitem(tu_listbox_t* lbxp, int row, int col, tu_subitem_
 void            tu_lbx_clear(tu_listbox_t* lbxp);
 int             tu_lbx_setcursel(tu_listbox_t* lbxp, int row, int redraw);
 int             tu_lbx_getcursel(tu_listbox_t* lbxp);
-void            tu_lbx_sort(tu_listbox_t* lbxp, int col);
+void            tu_lbx_sort(tu_listbox_t* lbxp, int col, int asc);
 
 #ifdef __cplusplus
 }

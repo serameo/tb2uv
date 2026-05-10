@@ -79,9 +79,10 @@ struct tu_wnditem
     int     alignment;
     int     attribs;
     char    text[FIELD_MAX_TEXT + 1];
-    unsigned int flags;
-    tu_listnode_t*      node;
-    tu_window_t*        parent;
+    void*   data;
+    unsigned int        flags;      /*item features*/
+    tu_listnode_t*      node;       /*internally used to find the linklist node*/
+    tu_window_t*        parent;     /*the parent window*/
 };
 typedef struct tu_wnditem tu_wnditem_t;
 
@@ -125,6 +126,7 @@ struct tu_listsubitem
     /*internally used*/
     tu_listnode_t*    node;
     int     sorting;
+    int     asc;
 };
 typedef struct tu_listsubitem tu_listsubitem_t;
 
@@ -232,6 +234,7 @@ static tu_wnditem_t* tu_wnd__getnextinput(tu_window_t* wndp, int dir)
         }
     }
     /*moved successfully*/
+#if 0
     if (node && itemp && itemp != wndp->activep)
     {
         tu_input_t* inp = 0;
@@ -249,10 +252,14 @@ static tu_wnditem_t* tu_wnd__getnextinput(tu_window_t* wndp, int dir)
             inp->first_focus = 1;
             tu_inp__draw(inp);
         }
+        else
+        {
+            tu_wnditem_draw(itemp);
+        }
         
-        wndp->activep = itemp;
+        /*wndp->activep = itemp;*/
     }
-    
+#endif
     return itemp;
 }
 
@@ -292,6 +299,7 @@ static void on_termbox_event(uv_poll_t* handle, int status, int events)
     tu_wnditem_t* nextp = 0;
     tu_wnditem_t* curp = 0;
     tu_notify_t   notify = { 0, 0, 0 };
+    int canmove = 0;
 
     if (rc == TB_OK && wndp)
     {
@@ -343,7 +351,7 @@ static void on_termbox_event(uv_poll_t* handle, int status, int events)
                         if (rc != 0)
                         {
                             /*not allowed to move*/
-                            tu_wnd_setactive(wndp, curp->id);
+                            /*tu_wnd_setactive(wndp, curp->id);*/
                             break;
                         }
                     }
@@ -353,10 +361,37 @@ static void on_termbox_event(uv_poll_t* handle, int status, int events)
                         notify.data = nextp;
                         rc = wndp->on_focus(ev.mod, ev.key, ev.ch, &notify);
                     }
+                    wndp->activep = nextp;
+                    canmove = 1;
                 }
             } while (0);
-        }
-    }
+            /*moved successfully*/
+            if (nextp == wndp->activep && canmove)
+            {
+                tu_input_t* inp = 0;
+
+                if (curp->type == FIELD_INPUT)
+                {
+                    inp = (tu_input_t*)curp;
+                    inp->first_focus = 0;
+                    tu_inp__draw(inp);
+                }
+                
+                if (nextp->type == FIELD_INPUT)
+                {
+                    inp = (tu_input_t*)nextp;
+                    inp->first_focus = 1;
+                    tu_inp__draw(inp);
+                }
+                else
+                {
+                    tu_wnditem_draw(nextp);
+                }
+                
+                /*wndp->activep = itemp;*/
+            }
+        } /*ev.key = TB_KEY_*/
+    } /*having a window pointer*/
     else if (TB_OK == rc)
     {
         /*the global event*/
@@ -634,7 +669,7 @@ void tu_fillbox(int x, int y, int width, int height, char ch, int fg, int bg, in
     }
 }
 
-#define INIT_FIELD_MEMBER(field_ptr, field_size, id, typ, x, y, w, txt)  \
+#define INIT_FIELD_MEMBER(field_ptr, field_size, id, typ, x, y, w, txt, dat)  \
 do {                                            \
     memset((field_ptr), 0, sizeof(struct tu_field));    \
     field_ptr->size         = (field_size);     \
@@ -650,26 +685,27 @@ do {                                            \
     field_ptr->visible      = (1);              \
     field_ptr->alignment    = (0);              \
     field_ptr->attribs      = (0);              \
+    field_ptr->data         = (void*)dat;       \
     field_ptr->text         = (char*)txt;       \
 } while (0)
 
 
-int tu_fld_initlabel(tu_field_t* fldp, int id, int x, int y, int w, const char* text)
+int tu_fld_initlabel(tu_field_t* fldp, int id, int x, int y, int w, const char* text, void* data)
 {
-    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_wnditem), id, FIELD_LABEL, x, y, w, text);
+    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_wnditem), id, FIELD_LABEL, x, y, w, text, data);
     fldp->enable = 0; /*always disable*/
     return 0;
 }
 
-int tu_fld_initinput(tu_field_t* fldp, int id, int x, int y, int w)
+int tu_fld_initinput(tu_field_t* fldp, int id, int x, int y, int w, void* data)
 {
-    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_input), id, FIELD_INPUT, x, y, w, "");
+    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_input), id, FIELD_INPUT, x, y, w, "", data);
     return 0;
 }
 
-int tu_fld_initlistbox(tu_field_t* fldp, int id, int x, int y, int w, int height, const char* text)
+int tu_fld_initlistbox(tu_field_t* fldp, int id, int x, int y, int w, int height, const char* text, void* data)
 {
-    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_listbox), id, FIELD_LISTBOX, x, y, w, text);
+    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_listbox), id, FIELD_LISTBOX, x, y, w, text, data);
     fldp->h = height; 
     return 0;
 }
@@ -682,6 +718,18 @@ void tu_wnditem_setflags(tu_wnditem_t* itemp, unsigned int flags)
 unsigned int tu_wnditem_getflags(tu_wnditem_t* itemp)
 {
     return itemp->flags;
+}
+
+void* tu_wnditem_setdata(tu_wnditem_t* itemp, void* data)
+{
+    void* olddata = itemp->data;
+    itemp->data = data;
+    return olddata;
+}
+
+void* tu_wnditem_getdata(tu_wnditem_t* itemp)
+{
+    return itemp->data;
 }
 
 tu_window_t*    tu_wnditem_getparent(tu_wnditem_t* itemp)
@@ -822,28 +870,6 @@ void tu_inp__draw(tu_input_t* inp)
         {
             memset(text, '*', width);
         }
-        /*else if (flags & FIELD_INPUT_NUMBER)
-        {
-            sprintf(buffer, "%d", number);
-            memcpy(text, &buffer[inp->xpos], width);
-        }
-        else if (flags & FIELD_INPUT_HEXNUMBER)
-        {
-            char* endp;
-            number = strtol(itemp->text, &endp, 16);
-            if (number != 0)
-            {
-                if (flags & FIELD_INPUT_CAPITAL)
-                {
-                    sprintf(buffer, "%X", number);
-                }
-                else
-                {
-                    sprintf(buffer, "%x", number);
-                }
-                memcpy(text, &buffer[inp->xpos], width);
-            }
-        }*/
         else
         {
             memcpy(text, &itemp->text[inp->xpos], width);
@@ -888,97 +914,6 @@ int tu_input__process_event(tu_wnditem_t* itemp, struct tb_event* ev)
         inp->xcur = 0;
         memset(itemp->text, 0, FIELD_MAX_TEXT);
         itemp->text[FIELD_MAX_TEXT] = 0;
-#if 0
-        if (ev->ch)
-        {
-            char ch = ev->ch;
-            inp->xpos = 0;
-            inp->xcur = 0;
-            memset(itemp->text, 0, FIELD_MAX_TEXT);
-            itemp->text[FIELD_MAX_TEXT] = 0;
-            if (flags & FIELD_INPUT_CAPITAL)
-            {
-                if (ch >= 'a' && ch <= 'z')
-                {
-                    ch = (ch - 'a') + 'A';
-                }
-            }
-            if (flags & FIELD_INPUT_NUMBER)
-            {
-                if (ch < '0' || ch > '9')
-                {
-                    /*replace*/
-                    return 1;
-                }
-            }
-            if (flags & FIELD_INPUT_HEXNUMBER)
-            {
-                if ((ch >= '0' && ch <= '9') ||
-                    (ch >= 'a' && ch <= 'f') ||
-                    (ch >= 'A' && ch <= 'F'))
-                {
-                }
-                else
-                {
-                    /*replace*/
-                    return 1;
-                }
-            }
-            if (flags & FIELD_INPUT_PASSWORD)
-            {
-                memset(inp->password, 0, FIELD_MAX_TEXT);
-                inp->password[FIELD_MAX_TEXT] = 0;
-                inp->password[inp->xcur] = ev->ch;
-                
-                ch = '*';
-            }
-            itemp->text[inp->xcur] = ch;
-            ++inp->xcur;
-        }
-        else
-        {
-            if (flags & (FIELD_INPUT_NUMBER | FIELD_INPUT_HEXNUMBER))
-            {
-                int number = atoi(itemp->text);
-                if (number == 0)
-                {
-                    /*always replace*/
-                    inp->xpos = 0;
-                    inp->xcur = 0;
-                    memset(itemp->text, 0, FIELD_MAX_TEXT);
-                    itemp->text[FIELD_MAX_TEXT] = 0;
-                }
-                else
-                {
-                    len = strlen(itemp->text);
-                    if (len > width)
-                    {
-                        inp->xpos = len - width;
-                    }
-                    inp->xcur = len;
-                }
-            }
-            else
-            {
-                len = strlen(itemp->text);
-                if (len > width)
-                {
-                    inp->xpos = len - width;
-                }
-                inp->xcur = len;
-            }
-        }
-        if (ev->key)
-        {
-            tu_window_t* wndp = tu_wnditem_getparent(itemp);
-            if (wndp->on_notify && ev->key == TB_KEY_ENTER)
-            {
-                tu_notify_t notify = { itemp->id, itemp, FIELD_NOTIFY_PRESSEDENTER };
-                wndp->on_notify(ev->mod, ev->key, ev->ch, &notify);
-            }
-        }
-        return 0;
-#endif
     }
     if (ev->key)
     {
@@ -1261,7 +1196,8 @@ tu_wnditem_t* tu_wnd_setactive(tu_window_t* wndp, int id)
 {
     tu_wnditem_t* activep = tu_wnd_getactive(wndp);
     tu_wnditem_t* newp = tu_wnd_getfield(wndp, id);
-    if (NULL == newp)
+    int rc = 0;
+    if (NULL != newp && activep != newp)
     {
         if (newp->enable && newp->visible)
         {
@@ -1270,12 +1206,16 @@ tu_wnditem_t* tu_wnd_setactive(tu_window_t* wndp, int id)
             {
                 inp = (tu_input_t*)wndp->activep;
                 inp->first_focus = 0;
-                tu_wnditem_draw(wndp->activep);
+                tu_inp__draw(inp);
             }
             if (newp->type == FIELD_INPUT)
             {
-                inp = (tu_input_t*)wndp->activep;
+                inp = (tu_input_t*)newp;
                 inp->first_focus = 1;
+                tu_inp__draw(inp);
+            }
+            else
+            {
                 tu_wnditem_draw(newp);
             }
             wndp->activep = newp;
@@ -1606,6 +1546,7 @@ int tu_lbx__getlastvisible(tu_listbox_t* lbxp)
 int tu_lbx__process_event(tu_wnditem_t* itemp, struct tb_event* ev)
 {
     tu_listbox_t* lbxp = (tu_listbox_t*)itemp;
+    tu_window_t* wndp = tu_wnditem_getparent(itemp);
     int items = tu_lbx__itemspage(lbxp);
     int currow = lbxp->currow;
     int curcol = lbxp->curcol;
@@ -1632,6 +1573,15 @@ int tu_lbx__process_event(tu_wnditem_t* itemp, struct tb_event* ev)
             case TB_KEY_ARROW_RIGHT:
                 ++curcol;
                 break;
+            case TB_KEY_ENTER:
+            {
+                if (wndp->on_notify)
+                {
+                    tu_notify_t notify = { itemp->id, itemp, FIELD_NOTIFY_PRESSEDENTER };
+                    wndp->on_notify(ev->mod, ev->key, ev->ch, &notify);
+                }
+                return 1;
+            }
         }
         if (currow < 0)
         {
@@ -1649,9 +1599,27 @@ int tu_lbx__process_event(tu_wnditem_t* itemp, struct tb_event* ev)
         {
             curcol = lbxp->rightcol;/*lbxp->nheaders - 1;*/
         }
-
+        /*update column*/
         lbxp->curcol = curcol;
-        lbxp->currow = currow;
+
+        /*update row*/
+        if (wndp->on_notify)
+        {
+            tu_notify_t notify = { itemp->id, itemp, FIELD_NOTIFY_ITEMCHANGING };
+            if (lbxp->currow != currow)
+            {
+                /*item changing*/
+                wndp->on_notify(ev->mod, ev->key, ev->ch, &notify);
+                lbxp->currow = currow;
+                /*item changed*/
+                notify.code = FIELD_NOTIFY_ITEMCHANGED;
+                wndp->on_notify(ev->mod, ev->key, ev->ch, &notify);
+            }
+        }
+        else
+        {
+            lbxp->currow = currow;
+        }
         
         tu_lbx__draw(lbxp);
     }
@@ -1894,16 +1862,17 @@ static int tu_lbx__cmpcol(const void* p1, const void* p2)
     const tu_row_t* r1p = (const tu_row_t*)p1;
     const tu_row_t* r2p = (const tu_row_t*)p2;
     int col = r1p->subitems[0].sorting;
+    int asc = (0 == r1p->subitems[0].asc ? (1) : (-1));
     
     const tu_listsubitem_t* sub1p = &r1p->subitems[col];
     const tu_listsubitem_t* sub2p = &r2p->subitems[col];
-    return strcmp(sub1p->text, sub2p->text);
+    return (asc) * (strcmp(sub1p->text, sub2p->text));
 }
 
-void tu_lbx_sort(tu_listbox_t* lbxp, int col)
+void tu_lbx_sort(tu_listbox_t* lbxp, int col, int asc)
 {
     /*create a temp array*/
-    int rowsize = sizeof(struct tu_listsubitem) * 10;/*lbxp->nheaders;*/
+    int rowsize = sizeof(struct tu_listsubitem) * 10;
     int rownode = sizeof(struct tu_listsubitem) * lbxp->nheaders;
     int tabsize = rowsize * lbxp->nrows;
     tu_listnode_t* nodep = tu_list_first(lbxp->rowp);
@@ -1934,6 +1903,7 @@ void tu_lbx_sort(tu_listbox_t* lbxp, int col)
     {
         memcpy(tabp[i].subitems, (tu_listsubitem_t*)tu_list_data(nodep), rownode);
         tabp[i].subitems[0].sorting = col;
+        tabp[i].subitems[0].asc = asc;
         nodep = tu_list_next(nodep);
         ++i;
     }
@@ -1990,7 +1960,7 @@ int tu_lbx_getitem(tu_listbox_t* lbxp, int row, int col, tu_subitem_t* itemp)
         itemp->fgcolor = subitemp[col].fgcolor;
         itemp->bgcolor = subitemp[col].bgcolor;
         itemp->data    = subitemp[col].data;
-        strcpy(itemp->text, subitemp->text);
+        strcpy(itemp->text, subitemp[col].text);
     }
     return 0;
 }
