@@ -39,16 +39,6 @@ tu_listnode_t*  tu_list_next(tu_listnode_t *node);
 tu_listnode_t*  tu_list_prev(tu_listnode_t *node);
 void*           tu_list_data(tu_listnode_t *node);
 
-/*Traversal*/
-typedef struct tu_listtrav  tu_listtrav_t;
-tu_listtrav_t*  tu_listtrav_new();
-void            tu_listtrav_delete(tu_listtrav_t* trav);
-void            tu_listtrav_clone(tu_listtrav_t* dest, tu_listtrav_t* src);
-
-void            *tu_listrav_first( tu_listtrav_t *trav, tu_linklist_t *list );
-void            *tu_listrav_last ( tu_listtrav_t *trav, tu_linklist_t *list );
-void            *tu_listrav_next ( tu_listtrav_t *trav );
-void            *tu_listrav_prev ( tu_listtrav_t *trav );
 
 #ifdef __cplusplus
 }
