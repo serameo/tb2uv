@@ -1139,8 +1139,9 @@ void tu_wnd_clearfield(tu_window_t* wndp)
     }
 }
 
-void tu_wnd__removefield_layers(tu_window_t* wndp, tu_wnditem_t* itemp)
+void tu_lay__removefield(tu_wnditem_t* itemp)
 {
+#if 0
     tu_layer_t* layp = 0;
     tu_listnode_t* nodep = tu_list_first(wndp->layers);
     while (nodep)
@@ -1149,6 +1150,9 @@ void tu_wnd__removefield_layers(tu_window_t* wndp, tu_wnditem_t* itemp)
         tu_list_erase(layp->items, itemp, 0);
         nodep = tu_list_next(nodep);
     }
+#endif
+    tu_layer_t* layp = itemp->layer;
+    tu_list_erase(layp->items, itemp, 0);
 }
 
 void tu_wnd_removefield(tu_window_t* wndp, int id)
@@ -1172,14 +1176,15 @@ void tu_wnd_removefield(tu_window_t* wndp, int id)
             }
         }
         /*layer*/
-        tu_wnd__removefield_layers(wndp, itemp);
-        
-        tu_list_erase(wndp->fields, itemp, 0);  /*navigation*/
-        
+        tu_lay__removefield(itemp);
+        /*navigation*/
+        tu_list_erase(wndp->fields, itemp, 0);
+        /*misc cleanup*/
         if (itemp->type == FIELD_LISTBOX)
         {
             tu_lbx_reset((tu_listbox_t*)itemp);
         }
+        /*remove the actual memory, now*/
         jsw_rberase(wndp->children, itemp);
     }
 }
@@ -1357,14 +1362,6 @@ void tu_wnd__refresh_layer(tu_layer_t* layp, int redraw)
 
 void tu_wnd__refresh(tu_window_t* wndp, int redraw)
 {
-#if 0
-    tu_wnditem_t* itemp = tu_wnd_getfirst(wndp);
-    while (itemp)
-    {
-        tu_wnditem__draw(itemp, 0);
-        itemp = tu_wnd_getnext(wndp);
-    }
-#endif
     tu_wnditem_t* itemp = 0;
     tu_layer_t* layp = 0;
     tu_listnode_t* nodep = tu_list_first(wndp->layers);
@@ -1431,11 +1428,19 @@ int tu_lay_id(tu_layer_t* layp)
 {
     return layp->id;
 }
-int tu_lay_visible(tu_layer_t* layp, int visible)
+int tu_lay_show(tu_layer_t* layp, int show)
 {
     int oldvis = layp->visible;
-    layp->visible = visible;
+    layp->visible = show;
     return oldvis;
+}
+void tu_lay_refresh(tu_layer_t* layp, int redraw)
+{
+    tu_wnd__refresh_layer(layp, 0);
+    if (redraw)
+    {
+        tb_present();
+    }
 }
 
 void tu_wnd_setevent(tu_window_t* wndp, int event, 

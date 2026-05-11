@@ -205,6 +205,10 @@ void            tu_wnd_delete(tu_window_t* wndp);
     </returns>
 */
 tu_wnditem_t*   tu_wnd_addfield(tu_window_t* wndp, tu_field_t* fldp);
+
+/*implement the tu_wnditem_t under a layer*/
+tu_layer_t*     tu_wnd_newlayer(tu_window_t* wndp);
+void            tu_wnd_deletelayer(tu_window_t* wndp, tu_layer_t* layp);
 tu_wnditem_t*   tu_wnd_addfieldlayer(tu_window_t* wndp, tu_field_t* fldp, tu_layer_t* layp);
 /**
     <summary>
@@ -272,10 +276,9 @@ void            tu_wnd_setevent(tu_window_t* wndp, int event,
                     int (*on_event)(int mod, int key, int ch, tu_notify_t* notify));
 
 /*layer*/
-tu_layer_t*     tu_wnd_newlayer(tu_window_t* wndp);
-void            tu_wnd_deletelayer(tu_window_t* wndp, tu_layer_t* layp);
 int             tu_lay_id(tu_layer_t* layp);
-int             tu_lay_visible(tu_layer_t* layp, int visible);
+int             tu_lay_show(tu_layer_t* layp, int show);
+void            tu_lay_refresh(tu_layer_t* layp, int redraw);
 
 /*wnditem*/
 int             tu_wnditem_setcolor(tu_wnditem_t* itemp, int fg, int bg);
