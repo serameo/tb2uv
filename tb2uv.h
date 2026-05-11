@@ -41,6 +41,7 @@ typedef struct tu_input     tu_input_t;     /*input field*/
 typedef struct tu_listbox   tu_listbox_t;   /*listbox field*/
 typedef struct tu_header    tu_header_t;    /*listbox header*/
 typedef struct tu_subitem   tu_subitem_t;   /*listbox subitem*/
+typedef struct tu_layer     tu_layer_t;     /*layer to contain tu_wnditem_t items */
 typedef struct tu_window    tu_window_t;    /*container*/
 typedef struct tu_notify    tu_notify_t;    /*notified by tu_wnditem_t */
 
@@ -203,7 +204,8 @@ void            tu_wnd_delete(tu_window_t* wndp);
     0 if the insertion failed for any reason
     </returns>
 */
-tu_wnditem_t*   tu_wnd_addfield(tu_window_t* wndp, tu_field_t* field);
+tu_wnditem_t*   tu_wnd_addfield(tu_window_t* wndp, tu_field_t* fldp);
+tu_wnditem_t*   tu_wnd_addfieldlayer(tu_window_t* wndp, tu_field_t* fldp, tu_layer_t* layp);
 /**
     <summary>
     To remove the item from the window
@@ -269,6 +271,12 @@ int (*on_event)(int mod, int key, int ch, int id, void* data);
 void            tu_wnd_setevent(tu_window_t* wndp, int event,
                     int (*on_event)(int mod, int key, int ch, tu_notify_t* notify));
 
+/*layer*/
+tu_layer_t*     tu_wnd_newlayer(tu_window_t* wndp);
+void            tu_wnd_deletelayer(tu_window_t* wndp, tu_layer_t* layp);
+int             tu_lay_id(tu_layer_t* layp);
+int             tu_lay_visible(tu_layer_t* layp, int visible);
+
 /*wnditem*/
 int             tu_wnditem_setcolor(tu_wnditem_t* itemp, int fg, int bg);
 int             tu_wnditem_setattribs(tu_wnditem_t* itemp, int attribs);
@@ -284,6 +292,7 @@ void            tu_wnditem_setflags(tu_wnditem_t* itemp, unsigned int flags);
 unsigned int    tu_wnditem_getflags(tu_wnditem_t* itemp);
 void*           tu_wnditem_setdata(tu_wnditem_t* itemp, void* data);
 void*           tu_wnditem_getdata(tu_wnditem_t* itemp);
+tu_layer_t*     tu_wnditem_getlayer(tu_wnditem_t* itemp);
 
 /*input*/
 void            tu_inp_setlimit(tu_input_t* inp, int limit);

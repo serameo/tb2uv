@@ -83,6 +83,7 @@ struct tu_wnditem
     unsigned int        flags;      /*item features*/
     tu_listnode_t*      node;       /*internally used to find the linklist node*/
     tu_window_t*        parent;     /*the parent window*/
+    tu_layer_t*         layer;
 };
 typedef struct tu_wnditem tu_wnditem_t;
 
@@ -163,14 +164,38 @@ static void  tu_lbx__rel ( void *p )
 {
 }
 
+struct tu_layer
+{
+    int             id;
+    int             visible;
+    tu_linklist_t*  items;      /*hold tu_wnditem*/
+    /*internally used*/
+    tu_listnode_t*  node;
+};
+static int   tu_lay__cmp ( const void *p1, const void *p2 )
+{
+    tu_wnditem_t* t1 = (tu_wnditem_t*)p1;
+    tu_wnditem_t* t2 = (tu_wnditem_t*)p2;
+    return (t1->id - t2->id);
+}
+static void *tu_lay__dup ( void *p1 )
+{
+    return NULL;
+}
+static void  tu_lay__rel ( void *p )
+{
+}
+
 
 struct tu_window
 {
-    jsw_rbtree_t*       children;       /*hold all tu_fields*/
-    jsw_rbtrav_t*       childtrav;
+    jsw_rbtree_t*       children;       /*hold all tu_fields: binary search feutures*/
     tu_linklist_t*      fields;         /*to handle movable children*/
-    tu_listnode_t*      nodes;
-    tu_wnditem_t*       activep;
+    tu_listnode_t*      travnodep;      /*traversal field*/
+    tu_wnditem_t*       activep;        /*current active item*/
+    /*layer*/
+    tu_linklist_t*      layers;         /*group of items*/
+    int                 layid;          /*allocate the layer id*/
     /*events*/
     int                 (*on_keydown)(int mod, int key, int ch, tu_notify_t* notify);    /*data = self   (tu_window_t*)  */
     int                 (*on_blur)   (int mod, int key, int ch, tu_notify_t* notify);    /*data = child  (tu_wnditem_t*) */
@@ -197,6 +222,29 @@ static void  tu_wnd__rel ( void *p )
 {
     free(p);
 }
+
+static int   tu_wndlay__cmp ( const void *p1, const void *p2 )
+{
+    tu_layer_t* f1 = (tu_layer_t*)p1;
+    tu_layer_t* f2 = (tu_layer_t*)p2;
+    return (f1->id - f2->id);
+}
+static void *tu_wndlay__dup ( void *p1 )
+{
+    int size = sizeof(struct tu_layer);
+    tu_layer_t* f1    = (tu_layer_t*)p1;
+    tu_layer_t* itemp = (tu_layer_t*)calloc(1, size);
+    if (itemp)
+    {
+        memcpy(itemp, f1, size);
+    }
+    return itemp;
+}
+static void  tu_wndlay__rel ( void *p )
+{
+    free(p);
+}
+
 static tu_wnditem_t* tu_wnd__getinput(tu_window_t* wndp)
 {
     return (wndp ? wndp->activep : NULL);
@@ -227,48 +275,28 @@ static tu_wnditem_t* tu_wnd__getnextinput(tu_window_t* wndp, int dir)
             break;
         }
         itemp = (tu_wnditem_t*)tu_list_data(node);
-        if (itemp && /*itemp->type == FIELD_INPUT && */
-            itemp->enable && itemp->visible)
+        if (itemp && 
+            itemp->enable && itemp->visible &&
+            itemp->layer->visible != 0)
         {
             break;
         }
     }
-    /*moved successfully*/
-#if 0
-    if (node && itemp && itemp != wndp->activep)
+    if (itemp && 
+        itemp->enable != 0 && 
+        itemp->visible != 0 &&
+        itemp->layer->visible != 0)
     {
-        tu_input_t* inp = 0;
-
-        if (wndp->activep->type == FIELD_INPUT)
-        {
-            inp = (tu_input_t*)wndp->activep;
-            inp->first_focus = 0;
-            tu_inp__draw(inp);
-        }
-        
-        if (itemp->type == FIELD_INPUT)
-        {
-            inp = (tu_input_t*)itemp;
-            inp->first_focus = 1;
-            tu_inp__draw(inp);
-        }
-        else
-        {
-            tu_wnditem_draw(itemp);
-        }
-        
-        /*wndp->activep = itemp;*/
+        return itemp;
     }
-#endif
-    return itemp;
+    return NULL;
 }
 
 static void field_draw(int x, int y, int width, const char* text, int fg, int bg, int aligment, int attribs, int redraw);
 static void field_format_text(char* dest, int limit, const char* src, int alignment);
 int         field_process_event(tu_wnditem_t* itemp, struct tb_event* evp);
 
-
-void tu_wnditem_draw(tu_wnditem_t* itemp)
+void tu_wnditem__draw(tu_wnditem_t* itemp, int redraw)
 {
     if (itemp->visible == 0)
     {
@@ -287,7 +315,12 @@ void tu_wnditem_draw(tu_wnditem_t* itemp)
     tu_drawtext(itemp->x, itemp->y, itemp->w, 
         itemp->text, 
         itemp->fgcolor, itemp->bgcolor, 
-        itemp->alignment, itemp->attribs, 1);
+        itemp->alignment, itemp->attribs, redraw);
+}
+
+void tu_wnditem_draw(tu_wnditem_t* itemp)
+{
+    tu_wnditem__draw(itemp, 1);
 }
 
 static void on_termbox_event(uv_poll_t* handle, int status, int events)
@@ -351,7 +384,6 @@ static void on_termbox_event(uv_poll_t* handle, int status, int events)
                         if (rc != 0)
                         {
                             /*not allowed to move*/
-                            /*tu_wnd_setactive(wndp, curp->id);*/
                             break;
                         }
                     }
@@ -737,6 +769,11 @@ tu_window_t*    tu_wnditem_getparent(tu_wnditem_t* itemp)
     return (itemp ? itemp->parent : NULL);
 }
 
+tu_layer_t*     tu_wnditem_getlayer(tu_wnditem_t* itemp)
+{
+    return itemp->layer;
+}
+
 int tu_wnditem_setcolor(tu_wnditem_t* itemp, int fg, int bg)
 {
     itemp->fgcolor = fg;
@@ -1037,26 +1074,44 @@ tu_window_t*    tu_wnd_new()
             free(wndp);
             return NULL;
         }
-        wndp->childtrav     = jsw_rbtnew();
         wndp->fields        = tu_list_new(tu_wnd__cmp, tu_wnd__dup, tu_wnd__rel);
-        /*wndp->itertrav      = tu_listtrav_new();
-        wndp->active_iter   = tu_listtrav_new();*/
+        wndp->layers        = tu_list_new(tu_wndlay__cmp, tu_wndlay__dup, tu_wndlay__rel);
+        /*add the layer:0*/
+        wndp->layid = 0;
+        tu_wnd_newlayer(wndp);
     }
     return wndp;
 }
 
+void tu_wnd__deletelayer(tu_window_t* wndp, tu_layer_t* layp);
+void tu_wnd__removelayers(tu_window_t* wndp)
+{
+    tu_listnode_t* laynodep = tu_list_first(wndp->layers);
+    tu_layer_t* layp = 0;
+    
+    while (laynodep)
+    {
+        layp = (tu_layer_t*)tu_list_data(laynodep);
+        tu_wnd__deletelayer(wndp, layp);
+
+        /*tu_list_remove(wndp->layers, laynodep, 0);*/
+        laynodep = tu_list_first(wndp->layers);
+    }
+}
+
 void tu_wnd_delete(tu_window_t* wndp)
 {
+    tu_wnd__removelayers(wndp);
+    if (wndp->layers)
+    {
+        tu_list_delete(wndp->layers);
+        wndp->layers = NULL;
+    }
     tu_wnd_clearfield(wndp);
     if (wndp->fields)
     {
         tu_list_delete(wndp->fields);
         wndp->fields = NULL;
-    }
-    if (wndp->childtrav)
-    {
-        jsw_rbtdelete(wndp->childtrav);
-        wndp->childtrav = NULL;
     }
     if (wndp->children)
     {
@@ -1084,6 +1139,18 @@ void tu_wnd_clearfield(tu_window_t* wndp)
     }
 }
 
+void tu_wnd__removefield_layers(tu_window_t* wndp, tu_wnditem_t* itemp)
+{
+    tu_layer_t* layp = 0;
+    tu_listnode_t* nodep = tu_list_first(wndp->layers);
+    while (nodep)
+    {
+        layp = (tu_layer_t*)tu_list_data(nodep);
+        tu_list_erase(layp->items, itemp, 0);
+        nodep = tu_list_next(nodep);
+    }
+}
+
 void tu_wnd_removefield(tu_window_t* wndp, int id)
 {
     tu_wnditem_t* itemp = tu_wnd_getfield(wndp, id);
@@ -1104,7 +1171,10 @@ void tu_wnd_removefield(tu_window_t* wndp, int id)
                 wndp->activep = NULL;
             }
         }
-        tu_list_erase(wndp->fields, itemp, 0);
+        /*layer*/
+        tu_wnd__removefield_layers(wndp, itemp);
+        
+        tu_list_erase(wndp->fields, itemp, 0);  /*navigation*/
         
         if (itemp->type == FIELD_LISTBOX)
         {
@@ -1152,7 +1222,7 @@ void tu_wnditem__init(tu_wnditem_t* itemp)
     }
 }
 
-tu_wnditem_t*  tu_wnd_addfield(tu_window_t* wndp, tu_field_t* fldp)
+tu_wnditem_t*   tu_wnd_addfieldlayer(tu_window_t* wndp, tu_field_t* fldp, tu_layer_t* layp)
 {
     tu_wnditem_t*   newp = 0;
 
@@ -1183,8 +1253,18 @@ tu_wnditem_t*  tu_wnd_addfield(tu_window_t* wndp, tu_field_t* fldp)
                 wndp->activep = newp;
             }
         }
+        
+        tu_list_pushback(layp->items, newp, 0);
+        newp->layer = layp;
     }
     return newp;
+}
+
+tu_wnditem_t*  tu_wnd_addfield(tu_window_t* wndp, tu_field_t* fldp)
+{
+    tu_listnode_t* nodep = tu_list_first(wndp->layers); /*default layer:0*/
+    tu_layer_t* layp = (tu_layer_t*)tu_list_data(nodep);
+    return tu_wnd_addfieldlayer(wndp, fldp, layp);
 }
 
 tu_wnditem_t* tu_wnd_getactive(tu_window_t* wndp)
@@ -1197,7 +1277,7 @@ tu_wnditem_t* tu_wnd_setactive(tu_window_t* wndp, int id)
     tu_wnditem_t* activep = tu_wnd_getactive(wndp);
     tu_wnditem_t* newp = tu_wnd_getfield(wndp, id);
     int rc = 0;
-    if (NULL != newp && activep != newp)
+    if (NULL != newp && activep != newp && newp->layer->visible != 0)
     {
         if (newp->enable && newp->visible)
         {
@@ -1227,48 +1307,135 @@ tu_wnditem_t* tu_wnd_setactive(tu_window_t* wndp, int id)
 tu_wnditem_t*     tu_wnd_getfirst(tu_window_t* wndp)
 {
     tu_wnditem_t* itemp = 0;
-    wndp->nodes = tu_list_first(wndp->fields);
-    itemp = (tu_wnditem_t*)tu_list_data(wndp->nodes);
+    wndp->travnodep = tu_list_first(wndp->fields);
+    itemp = (tu_wnditem_t*)tu_list_data(wndp->travnodep);
     return itemp;
 }
 
 tu_wnditem_t*     tu_wnd_getlast(tu_window_t* wndp)
 {
     tu_wnditem_t* itemp = 0;
-    wndp->nodes = tu_list_last(wndp->fields);
-    itemp = (tu_wnditem_t*)tu_list_data(wndp->nodes);
+    wndp->travnodep = tu_list_last(wndp->fields);
+    itemp = (tu_wnditem_t*)tu_list_data(wndp->travnodep);
     return itemp;
 }
 
 tu_wnditem_t*     tu_wnd_getnext(tu_window_t* wndp)
 {
     tu_wnditem_t* itemp = 0;
-    wndp->nodes = tu_list_next(wndp->nodes);
-    itemp = (tu_wnditem_t*)tu_list_data(wndp->nodes);
+    wndp->travnodep = tu_list_next(wndp->travnodep);
+    itemp = (tu_wnditem_t*)tu_list_data(wndp->travnodep);
     return itemp;
 }
 
 tu_wnditem_t*     tu_wnd_getprev(tu_window_t* wndp)
 {
     tu_wnditem_t* itemp = 0;
-    wndp->nodes = tu_list_prev(wndp->nodes);
-    itemp = (tu_wnditem_t*)tu_list_data(wndp->nodes);
+    wndp->travnodep = tu_list_prev(wndp->travnodep);
+    itemp = (tu_wnditem_t*)tu_list_data(wndp->travnodep);
     return itemp;
 }
 
-void tu_wnd_refresh(tu_window_t* wndp)
+void tu_wnd__refresh_layer(tu_layer_t* layp, int redraw)
 {
+    tu_wnditem_t* itemp = 0;
+    tu_listnode_t* nodep = tu_list_first(layp->items);
+    while (nodep)
+    {
+        itemp = (tu_wnditem_t*)tu_list_data(nodep);
+        if (layp->visible)
+        {
+            tu_wnditem__draw(itemp, redraw);
+        }
+        else
+        {
+            tu_fillbox(itemp->x, itemp->y, itemp->w, itemp->h, ' ', 0, 0, redraw);
+        }
+        nodep = tu_list_next(nodep);
+    }
+}
+
+void tu_wnd__refresh(tu_window_t* wndp, int redraw)
+{
+#if 0
     tu_wnditem_t* itemp = tu_wnd_getfirst(wndp);
     while (itemp)
     {
-        tu_wnditem_draw(itemp);
+        tu_wnditem__draw(itemp, 0);
         itemp = tu_wnd_getnext(wndp);
+    }
+#endif
+    tu_wnditem_t* itemp = 0;
+    tu_layer_t* layp = 0;
+    tu_listnode_t* nodep = tu_list_first(wndp->layers);
+    while (nodep)
+    {
+        layp = (tu_layer_t*)tu_list_data(nodep);
+        tu_wnd__refresh_layer(layp, 0);
+        nodep = tu_list_next(nodep);
     }
     itemp = tu_wnd__getinput(wndp);
     if (itemp)
     {
-        tu_wnditem_draw(itemp);
+        tu_wnditem__draw(itemp, 0);
     }
+
+    /*redraw*/
+    if (redraw)
+    {
+        tb_present();
+    }
+}
+
+void tu_wnd_refresh(tu_window_t* wndp)
+{
+    tu_wnd__refresh(wndp, 1);
+}
+
+void tu_wnd__inclayid(tu_window_t* wndp)
+{
+    ++wndp->layid;
+}
+
+tu_layer_t*     tu_wnd_newlayer(tu_window_t* wndp)
+{
+    tu_layer_t* layp = (tu_layer_t*)calloc(1, sizeof(struct tu_layer));
+    if (layp)
+    {
+        layp->visible = 1;
+        layp->id = wndp->layid;
+        tu_wnd__inclayid(wndp);
+        layp->items = tu_list_new(tu_lay__cmp, tu_lay__dup, tu_lay__rel);
+        tu_list_pushback(wndp->layers, layp, 0);
+        layp->node = tu_list_last(wndp->layers);
+    }
+    return layp;
+}
+void tu_wnd__deletelayer(tu_window_t* wndp, tu_layer_t* layp)
+{
+    tu_list_delete(layp->items);
+    tu_list_erase(wndp->layers, layp, 0);
+}
+
+void tu_wnd_deletelayer(tu_window_t* wndp, tu_layer_t* layp)
+{
+    /*never delete layer:0*/
+    if (0 == layp->id)
+    {
+        return;
+    }
+    tu_wnd__deletelayer(wndp, layp);
+}
+
+int tu_lay_id(tu_layer_t* layp)
+{
+    return layp->id;
+}
+int tu_lay_visible(tu_layer_t* layp, int visible)
+{
+    int oldvis = layp->visible;
+    layp->visible = visible;
+    return oldvis;
 }
 
 void tu_wnd_setevent(tu_window_t* wndp, int event, 

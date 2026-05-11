@@ -95,6 +95,14 @@ static int on_notify(int mod, int key, int ch, tu_notify_t* notify)
                 break;
         }
     }
+    if (notify->id == 20 ||
+        notify->id == 30 ||
+        notify->id == 40)
+    {
+        tu_wnditem_gettext(itemp, text, FIELD_MAX_TEXT);
+        tu_wnditem_settext(label3, text);
+        tu_wnditem_draw(label3);
+    }
     return 0;   /*return to the global event*/
 }
 
@@ -105,9 +113,12 @@ static void init_listbox(tu_window_t*    wndp)
     tu_subitem_t    subitem[4];
     tu_listbox_t*   lbxp    = 0;
     tu_wnditem_t*   itemp   = 0;
+    tu_layer_t*     layp    = 0;
 
+    layp = tu_wnd_newlayer(wndp);
+    /*tu_lay_visible(layp, 0);*//*test: hide layer*/
     tu_fld_initlistbox(&fld, 50, 31, 4, 30, 5, "THIS IS A LISTBOX", 0);
-    itemp = tu_wnd_addfield(wndp, &fld);
+    itemp = tu_wnd_addfieldlayer(wndp, &fld, layp);
     lbxp = (tu_listbox_t*)itemp;
 
     headers[0].w        = 4;
@@ -220,7 +231,7 @@ static void init_controls()
     tu_fld_initlabel(&fld, 12,  0, 2, 30, "TRY TEXT ME!!", 0);
     itemp = tu_wnd_addfield(wndp, &fld);
     /*tu_wnditem_setattribs(itemp, FIELD_REVERSE);*/
-    tu_wnditem_setcolor(itemp, 0, FIELD_BLUE);
+    tu_wnditem_setcolor(itemp, 0, FIELD_GREEN);
 
     tu_fld_initinput(&fld,  20, 31, 0, 20, 0);
     itemp = tu_wnd_addfield(wndp, &fld);
