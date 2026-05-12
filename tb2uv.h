@@ -104,6 +104,8 @@ struct tu_notify
 #define FIELD_HI_BLACK                                      (0x2000)
 #define FIELD_BRIGHT                                        (0x4000)
 #define FIELD_DIM                                           (0x8000)
+/*label flags*/
+#define FIELD_LABEL_WRAPTEXT                                (0x00000001)
 /*input flags*/
 #define FIELD_INPUT_NOECHO                                  (0x00000001)
 #define FIELD_INPUT_PASSWORD                                (0x00000002)
@@ -166,8 +168,8 @@ tu_window_t*    tu_getwindow();
     tu_fld_initlistbox() - To initialize the listbox object
     </summary>
 */
-int             tu_fld_initlabel(tu_field_t* fldp,   int id, int x, int y, int width, const char* text, void* data);
-int             tu_fld_initinput(tu_field_t* fldp,   int id, int x, int y, int width, void* data);
+int             tu_fld_initlabel(tu_field_t* fldp,   int id, int x, int y, int width, int height, const char* text, void* data);
+int             tu_fld_initinput(tu_field_t* fldp,   int id, int x, int y, int width, int height, void* data);
 int             tu_fld_initlistbox(tu_field_t* fldp, int id, int x, int y, int width, int height, const char* text, void* data);
 /**
     <summary>

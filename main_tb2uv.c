@@ -218,39 +218,47 @@ static void init_controls()
     tu_input_t*     inp     = 0;
     tu_wnditem_t*   itemp   = 0;
     
-    tu_fld_initlabel(&fld, 10,  0, 0, 30, "PRESS ALT+F3 TO QUIT", 0);
+    tu_fld_initlabel(&fld, 10,  0, 0, 30, 1, "PRESS ALT+F3 TO QUIT", 0);
     itemp = tu_wnd_addfield(wndp, &fld);
     tu_wnditem_setattribs(itemp, FIELD_REVERSE);
     tu_wnditem_setcolor(itemp, FIELD_CYAN, FIELD_BLUE);
     
-    tu_fld_initlabel(&fld, 11,  0, 1, 30, "INFORMATION HERE!!", 0);
+    tu_fld_initlabel(&fld, 11,  0, 1, 30, 1, "INFORMATION HERE!!", 0);
     itemp = tu_wnd_addfield(wndp, &fld);
     /*tu_wnditem_setattribs(itemp, FIELD_REVERSE);*/
     tu_wnditem_setcolor(itemp, 0, FIELD_BLUE);
 
-    tu_fld_initlabel(&fld, 12,  0, 2, 30, "TRY TEXT ME!!", 0);
+    tu_fld_initlabel(&fld, 12,  0, 2, 30, 1, "TRY TEXT ME!!", 0);
     itemp = tu_wnd_addfield(wndp, &fld);
     /*tu_wnditem_setattribs(itemp, FIELD_REVERSE);*/
     tu_wnditem_setcolor(itemp, 0, FIELD_GREEN);
 
-    tu_fld_initinput(&fld,  20, 31, 0, 20, 0);
+    tu_fld_initlabel(&fld, 13,  0, 3, 30, 4, 
+        "THIS IS AN EXAMPLE THE LONG TEXT THAT WILL BE WRAPPED AUTOMATICALLY", 
+        0);
+    itemp = tu_wnd_addfield(wndp, &fld);
+    tu_wnditem_setattribs(itemp, FIELD_UNDERLINE);
+    tu_wnditem_setcolor(itemp, 0, FIELD_YELLOW);
+    tu_wnditem_setflags(itemp, FIELD_LABEL_WRAPTEXT);
+
+    tu_fld_initinput(&fld,  20, 31, 0, 20, 1, 0);
     itemp = tu_wnd_addfield(wndp, &fld);
     tu_wnditem_setcolor(itemp, FIELD_MAGENTA, 0);
-    tu_wnditem_setflags(itemp, FIELD_INPUT_CAPITAL|FIELD_INPUT_PASSWORD);
+    tu_wnditem_setflags(itemp, FIELD_INPUT_PASSWORD);
     inp = (tu_input_t*)itemp;
     tu_inp_setlimit(inp, 8);
 
-    tu_fld_initinput(&fld,  30, 31, 1, 20, 0);
+    tu_fld_initinput(&fld,  30, 31, 1, 20, 1, 0);
     itemp = tu_wnd_addfield(wndp, &fld);
     tu_wnditem_setcolor(itemp, FIELD_GREEN, 0);
     tu_wnditem_setflags(itemp, FIELD_INPUT_NUMBER);
     inp = (tu_input_t*)itemp;
     tu_wnditem_settext(itemp, "9230941");
 
-    tu_fld_initinput(&fld,  40, 31, 2, 20, 0);
+    tu_fld_initinput(&fld,  40, 31, 2, 20, 1, 0);
     itemp = tu_wnd_addfield(wndp, &fld);
     tu_wnditem_setcolor(itemp, FIELD_BLUE, 0);
-    tu_wnditem_setflags(itemp, FIELD_INPUT_HEXNUMBER);
+    tu_wnditem_setflags(itemp, FIELD_INPUT_CAPITAL|FIELD_INPUT_HEXNUMBER);
     tu_wnditem_settext(itemp, "3829addce");
     
     init_listbox(wndp);

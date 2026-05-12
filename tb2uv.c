@@ -6,7 +6,6 @@
 extern int errno;
 #include "termbox2.h"
 #include "jsw_rbtree.h"
-#include "cJSON.h"
 #include "tu_list.h"
 #include "tb2uv.h"
 
@@ -86,6 +85,11 @@ struct tu_wnditem
     tu_layer_t*         layer;
 };
 typedef struct tu_wnditem tu_wnditem_t;
+
+struct tu_label
+{
+    struct tu_wnditem item;      /*based object*/
+};
 
 struct tu_input
 {
@@ -253,6 +257,7 @@ static tu_wnditem_t* tu_wnd__getinput(tu_window_t* wndp)
 int  tu_inp__settext(tu_input_t* inp, const char* text);
 void tu_inp__draw(tu_input_t* inp);
 void tu_lbx__draw(tu_listbox_t* lbxp);
+void tu_lbl__draw(tu_label_t* lblp);
 
 static tu_wnditem_t* tu_wnd__getnextinput(tu_window_t* wndp, int dir)
 {
@@ -294,7 +299,8 @@ static tu_wnditem_t* tu_wnd__getnextinput(tu_window_t* wndp, int dir)
 
 static void field_draw(int x, int y, int width, const char* text, int fg, int bg, int aligment, int attribs, int redraw);
 static void field_format_text(char* dest, int limit, const char* src, int alignment);
-int         field_process_event(tu_wnditem_t* itemp, struct tb_event* evp);
+static int  field_process_event(tu_wnditem_t* itemp, struct tb_event* evp);
+static void field__toupper(char* text);
 
 void tu_wnditem__draw(tu_wnditem_t* itemp, int redraw)
 {
@@ -310,6 +316,11 @@ void tu_wnditem__draw(tu_wnditem_t* itemp, int redraw)
     else if (itemp->type == FIELD_LISTBOX)
     {
         tu_lbx__draw((tu_listbox_t*)itemp);
+        return;
+    }
+    else if (itemp->type == FIELD_LABEL && itemp->flags & FIELD_LABEL_WRAPTEXT)
+    {
+        tu_lbl__draw((tu_label_t*)itemp);
         return;
     }
     tu_drawtext(itemp->x, itemp->y, itemp->w, 
@@ -580,7 +591,15 @@ static void field_format_text(char* dest, int limit, const char* src, int alignm
         strncpy(dest, src, len);
     }
 }
-
+static void field__toupper(char* text)
+{
+    int i = 0;
+    int len = strlen(text);
+    for (i = 0; i < len; ++i)
+    {
+        text[i] = toupper(text[i]);
+    }
+}
 static void field_draw(int x, int y, int width, const char* text, int fg, int bg, int alignment, int attribs, int redraw)
 {
     char buffer[FIELD_MAX_TEXT + 1];
@@ -701,7 +720,7 @@ void tu_fillbox(int x, int y, int width, int height, char ch, int fg, int bg, in
     }
 }
 
-#define INIT_FIELD_MEMBER(field_ptr, field_size, id, typ, x, y, w, txt, dat)  \
+#define INIT_FIELD_MEMBER(field_ptr, field_size, id, typ, x, y, w, h, txt, dat)  \
 do {                                            \
     memset((field_ptr), 0, sizeof(struct tu_field));    \
     field_ptr->size         = (field_size);     \
@@ -710,7 +729,7 @@ do {                                            \
     field_ptr->x            = (x);              \
     field_ptr->y            = (y);              \
     field_ptr->w            = (w);              \
-    field_ptr->h            = (1);              \
+    field_ptr->h            = (h);              \
     field_ptr->fgcolor      = (0);              \
     field_ptr->bgcolor      = (0);              \
     field_ptr->enable       = (1);              \
@@ -722,23 +741,22 @@ do {                                            \
 } while (0)
 
 
-int tu_fld_initlabel(tu_field_t* fldp, int id, int x, int y, int w, const char* text, void* data)
+int tu_fld_initlabel(tu_field_t* fldp, int id, int x, int y, int w, int h, const char* text, void* data)
 {
-    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_wnditem), id, FIELD_LABEL, x, y, w, text, data);
+    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_wnditem), id, FIELD_LABEL, x, y, w, h, text, data);
     fldp->enable = 0; /*always disable*/
     return 0;
 }
 
-int tu_fld_initinput(tu_field_t* fldp, int id, int x, int y, int w, void* data)
+int tu_fld_initinput(tu_field_t* fldp, int id, int x, int y, int w, int h, void* data)
 {
-    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_input), id, FIELD_INPUT, x, y, w, "", data);
+    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_input), id, FIELD_INPUT, x, y, w, h, "", data);
     return 0;
 }
 
-int tu_fld_initlistbox(tu_field_t* fldp, int id, int x, int y, int w, int height, const char* text, void* data)
+int tu_fld_initlistbox(tu_field_t* fldp, int id, int x, int y, int w, int h, const char* text, void* data)
 {
-    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_listbox), id, FIELD_LISTBOX, x, y, w, text, data);
-    fldp->h = height; 
+    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_listbox), id, FIELD_LISTBOX, x, y, w, h, text, data);
     return 0;
 }
 
@@ -792,6 +810,7 @@ int tu_wnditem_settext(tu_wnditem_t* itemp, const char* text)
     if (itemp->type == FIELD_INPUT)
     {
         tu_inp__settext((tu_input_t*)itemp, text);
+        return 0;
     }
     strncpy(itemp->text, text, FIELD_MAX_TEXT);
     return 0;
@@ -845,26 +864,29 @@ int  tu_inp__settext(tu_input_t* inp, const char* text)
         memset(buffer, '*', len);
         strncpy(inp->password, text, len);
     }
-    else if (flags & (FIELD_INPUT_NUMBER | FIELD_INPUT_HEXNUMBER))
+    else if (flags & FIELD_INPUT_NUMBER)
     {
         char* endptr;
         unsigned long long int number;
         int base = 10;
-        if (flags & FIELD_INPUT_HEXNUMBER)
-        {
-            base = 16;
-        }
         number = strtoull (text, &endptr, base);
         sprintf(buffer, "%llu", number);
     }
+    else if (flags & FIELD_INPUT_HEXNUMBER)
+    {
+        char* endptr;
+        unsigned long long int number;
+        int base = 16;
+        number = strtoull (text, &endptr, base);
+        sprintf(buffer, "%llx", number);
+    }
+    else
+    {
+        strcpy(buffer, text);
+    }
     if (flags & FIELD_INPUT_CAPITAL)
     {
-        int i = 0;
-        len = strlen(buffer);
-        for (i = 0; i < len; ++i)
-        {
-            buffer[i] = toupper(buffer[i]);
-        }
+        field__toupper(buffer);
     }
     strcpy(itemp->text, buffer);
     return 0;
@@ -1463,6 +1485,73 @@ void tu_wnd_setevent(tu_window_t* wndp, int event,
     }
 }
 
+/*label*/
+int tu_lbl__reversefind(const char* text, char ch)
+{
+    int i = 0;
+    int len = strlen(text);
+    for (i = 0; i < len; ++i)
+    {
+        if (text[len - i - 1] == ch)
+        {
+            break;
+        }
+    }
+    return i;
+}
+void tu_lbl__draw(tu_label_t* lblp)
+{
+    tu_wnditem_t* itemp = &lblp->item;
+    int x = itemp->x;
+    int y = itemp->y;
+    int w = itemp->w;
+    int h = itemp->h;
+    int len = strlen(itemp->text);
+    char text[FIELD_MAX_TEXT + 1];
+    int i = 0;
+    int j = 0;
+    int k = 0;
+    int fg = itemp->fgcolor;
+    int bg = itemp->bgcolor;
+    int alignment = itemp->alignment;
+    int attribs = itemp->attribs;
+    int pos = 0;
+    for (j = 0; j < h && k < len; ++j)
+    {
+        memset(text, 0, sizeof(text));
+        pos = 0;
+        for (i = 0; i < len && k < len; ++i)
+        {
+            if (i < w)
+            {
+                text[i] = itemp->text[k];
+                k++;
+            }
+            else
+            {
+                pos = tu_lbl__reversefind(text, ' ');
+                if (k - pos > 0)
+                {
+                    k -= pos;
+                    text[i - pos] = 0;
+                }
+                /*draw*/
+                field_draw(x, y + j, w, text, fg, bg, alignment, attribs, 0);
+                break;
+            }
+        }
+        if (k >= len)
+        {
+            field_draw(x, y + j, w, text, fg, bg, alignment, attribs, 0);
+        }
+    }
+    for (; j < h && k >= len; ++j)
+    {
+        tu_fillbox(x, y + j, w, 1, ' ', fg, bg, 0);
+    }
+}
+
+
 /*input*/
 void tu_inp_setlimit(tu_input_t* inp, int limit)
 {
@@ -1602,50 +1691,6 @@ tu_listsubitem_t*   tu_lbx__get(tu_listbox_t* lbxp, int row)
         subitemp = (tu_listsubitem_t*)tu_list_data(node);
     }
     return subitemp; 
-}
-
-#if 0
-struct tu_listheader
-{
-    int     w;
-    int     fgcolor;
-    int     bgcolor;
-    int     alignment;
-    int     attribs;
-    char    text[FIELD_MAX_TEXT + 1];
-};
-typedef struct tu_listheader tu_listheader_t;
-
-struct tu_listsubitem
-{
-    int     fgcolor;
-    int     bgcolor;
-    int     attribs;
-    void*   data;
-    char    text[FIELD_MAX_TEXT + 1];
-    tu_listnode_t*    node;
-};
-typedef struct tu_listsubitem tu_listsubitem_t;
-#endif
-
-int tu_lbx__maxcol(tu_listbox_t* lbxp)
-{
-    tu_wnditem_t* itemp = &lbxp->item;
-    int i = 0;
-    int w = itemp->w;
-    int cw = 0;
-    tu_listheader_t* hdrp = 0;
-
-    for (i = lbxp->curcol; i < lbxp->nheaders; ++i)
-    {
-        if (cw > w)
-        {
-            return (i + 1);
-        }
-        hdrp = &lbxp->hdrp[i];
-        cw += hdrp->w;
-    }
-    return (lbxp->nheaders);
 }
 
 int tu_lbx__itemspage(tu_listbox_t* lbxp)
