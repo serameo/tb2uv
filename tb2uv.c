@@ -110,6 +110,18 @@ struct tu_input
     char    password[FIELD_MAX_TEXT + 1];
 };
 
+struct tu_edit
+{
+    struct tu_wnditem item;      /*based object*/
+    /*cursor*/
+    int     xoffset;    /*x-offset to draw*/
+    int     yoffset;    /*y-offset to select a line to draw*/
+    int     xcur;       /*x-cursor*/
+    int     ycur;       /*y-cursor*/
+    int     nlines;     /*line count*/
+    char    lines[FIELD_EDIT_MAXLINES][FIELD_EDIT_MAXTEXT];
+};
+
 struct tu_listheader
 {
     int     w;
@@ -218,7 +230,8 @@ static void *tu_wnd__dup ( void *p1 )
     tu_wnditem_t* itemp = (tu_wnditem_t*)calloc(1, f1->size);
     if (itemp)
     {
-        memcpy(itemp, f1, f1->size);
+        memcpy(itemp, f1, sizeof(tu_wnditem_t));
+        itemp->size = f1->size;
     }
     return itemp;
 }
@@ -256,8 +269,15 @@ static tu_wnditem_t* tu_wnd__getinput(tu_window_t* wndp)
 
 int  tu_inp__settext(tu_input_t* inp, const char* text);
 void tu_inp__draw(tu_input_t* inp);
-void tu_lbx__draw(tu_listbox_t* lbxp);
+int  tu_inp__process_event(tu_wnditem_t* itemp, struct tb_event* ev);
+
 void tu_lbl__draw(tu_label_t* lblp);
+void tu_lbx__draw(tu_listbox_t* lbxp);
+int  tu_lbx__process_event(tu_wnditem_t* itemp, struct tb_event* ev);
+
+void tu_edt__draw(tu_edit_t* edtp);
+int  tu_edt__process_event(tu_wnditem_t* itemp, struct tb_event* ev);
+int  tu_edt__settext(tu_edit_t* inp, const char* text);
 
 static tu_wnditem_t* tu_wnd__getnextinput(tu_window_t* wndp, int dir)
 {
@@ -311,6 +331,11 @@ void tu_wnditem__draw(tu_wnditem_t* itemp, int redraw)
     if (itemp->type == FIELD_INPUT)
     {
         tu_inp__draw((tu_input_t*)itemp);
+        return;
+    }
+    else if (itemp->type == FIELD_EDIT)
+    {
+        tu_edt__draw((tu_edit_t*)itemp);
         return;
     }
     else if (itemp->type == FIELD_LISTBOX)
@@ -705,14 +730,14 @@ void tu_drawbox(int x, int y, int width, int height, char chhorz, char chvert, c
     }
 }
 
-void tu_fillbox(int x, int y, int width, int height, char ch, int fg, int bg, int redraw)
+void tu_fillbox(int x, int y, int width, int height, char ch, int fg, int bg, int attribs, int redraw)
 {
     int i = 0;
     memset(g_blank, ch, sizeof(g_blank));
     g_blank[FIELD_MAX_TEXT] = 0;
     for (i = 0; i < height; ++i)
     {
-        tu_drawtext(x, y + i, width, g_blank, fg, bg, 0, 0, 0);
+        tu_drawtext(x, y + i, width, g_blank, fg, bg, 0, attribs, 0);
     }
     if (redraw)
     {
@@ -720,7 +745,7 @@ void tu_fillbox(int x, int y, int width, int height, char ch, int fg, int bg, in
     }
 }
 
-#define INIT_FIELD_MEMBER(field_ptr, field_size, id, typ, x, y, w, h, txt, dat)  \
+#define INIT_FIELD_MEMBER(field_ptr, field_size, id, typ, x, y, w, h, txt, al, at, dat)  \
 do {                                            \
     memset((field_ptr), 0, sizeof(struct tu_field));    \
     field_ptr->size         = (field_size);     \
@@ -734,29 +759,35 @@ do {                                            \
     field_ptr->bgcolor      = (0);              \
     field_ptr->enable       = (1);              \
     field_ptr->visible      = (1);              \
-    field_ptr->alignment    = (0);              \
-    field_ptr->attribs      = (0);              \
+    field_ptr->alignment    = (al);             \
+    field_ptr->attribs      = (at);             \
     field_ptr->data         = (void*)dat;       \
     field_ptr->text         = (char*)txt;       \
 } while (0)
 
 
-int tu_fld_initlabel(tu_field_t* fldp, int id, int x, int y, int w, int h, const char* text, void* data)
+int tu_fld_initlabel(tu_field_t* fldp, int id, int x, int y, int w, int h, const char* text, int alignment, int attribs, void* data)
 {
-    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_wnditem), id, FIELD_LABEL, x, y, w, h, text, data);
+    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_wnditem), id, FIELD_LABEL, x, y, w, h, text, alignment, attribs, data);
     fldp->enable = 0; /*always disable*/
     return 0;
 }
 
-int tu_fld_initinput(tu_field_t* fldp, int id, int x, int y, int w, int h, void* data)
+int tu_fld_initinput(tu_field_t* fldp, int id, int x, int y, int w, int h, const char* text,  int alignment, int attribs, void* data)
 {
-    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_input), id, FIELD_INPUT, x, y, w, h, "", data);
+    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_input), id, FIELD_INPUT, x, y, w, h, text, alignment, attribs, data);
     return 0;
 }
 
-int tu_fld_initlistbox(tu_field_t* fldp, int id, int x, int y, int w, int h, const char* text, void* data)
+int tu_fld_initlistbox(tu_field_t* fldp, int id, int x, int y, int w, int h, const char* text, int alignment, int attribs, void* data)
 {
-    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_listbox), id, FIELD_LISTBOX, x, y, w, h, text, data);
+    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_listbox), id, FIELD_LISTBOX, x, y, w, h, text, alignment, attribs, data);
+    return 0;
+}
+
+int tu_fld_initedit(tu_field_t* fldp, int id, int x, int y, int w, int h, const char* text,  int alignment, int attribs, void* data)
+{
+    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_edit), id, FIELD_EDIT, x, y, w, h, text, alignment, attribs, data);
     return 0;
 }
 
@@ -768,6 +799,16 @@ void tu_wnditem_setflags(tu_wnditem_t* itemp, unsigned int flags)
 unsigned int tu_wnditem_getflags(tu_wnditem_t* itemp)
 {
     return itemp->flags;
+}
+
+void tu_wnditem_setalignment(tu_wnditem_t* itemp, int alignment)
+{
+    itemp->alignment = alignment;
+}
+
+int tu_wnditem_getalignment(tu_wnditem_t* itemp)
+{
+    return itemp->alignment;
 }
 
 void* tu_wnditem_setdata(tu_wnditem_t* itemp, void* data)
@@ -810,6 +851,11 @@ int tu_wnditem_settext(tu_wnditem_t* itemp, const char* text)
     if (itemp->type == FIELD_INPUT)
     {
         tu_inp__settext((tu_input_t*)itemp, text);
+        return 0;
+    }
+    else if (itemp->type == FIELD_EDIT)
+    {
+        tu_edt__settext((tu_edit_t*)itemp, text);
         return 0;
     }
     strncpy(itemp->text, text, FIELD_MAX_TEXT);
@@ -955,7 +1001,7 @@ int tu_fld_draw(tu_field_t* fldp)
     return 0;
 }
 
-int tu_input__process_event(tu_wnditem_t* itemp, struct tb_event* ev)
+int tu_inp__process_event(tu_wnditem_t* itemp, struct tb_event* ev)
 {
     int len   = 0;
     tu_input_t* inp = (tu_input_t*)itemp;
@@ -1071,16 +1117,16 @@ int tu_input__process_event(tu_wnditem_t* itemp, struct tb_event* ev)
     return 1;
 }
 
-int tu_lbx__process_event(tu_wnditem_t* itemp, struct tb_event* ev);
-
 int field_process_event(tu_wnditem_t* itemp, struct tb_event* evp)
 {
     switch (itemp->type)
     {
         case FIELD_INPUT:
-            return tu_input__process_event(itemp, evp);
+            return tu_inp__process_event(itemp, evp);
         case FIELD_LISTBOX:
             return tu_lbx__process_event(itemp, evp);
+        case FIELD_EDIT:
+            return tu_edt__process_event(itemp, evp);
     }
     return 0;
 }
@@ -1246,6 +1292,18 @@ void tu_wnditem__init(tu_wnditem_t* itemp)
             lbxp->curcol    = 0;    /*changed when pressed TB_KEY_LEFT or TB_KEY_RIGHT*/
             break;
         }
+        case FIELD_EDIT:
+        {
+            tu_edit_t* edtp = (tu_edit_t*)itemp;
+            edtp->nlines = 1;
+            /*edtp->nrows  = FILED_EDIT_MAXROW;
+            edtp->ncols  = FIELD_EDIT_MAXTEXT;*/
+            edtp->xoffset = 0;  /*scroll x-axis*/
+            edtp->yoffset = 0;  /*scroll y-axis*/
+            edtp->xcur = 0;
+            edtp->ycur = 0;
+            break;
+        }
     }
 }
 
@@ -1257,7 +1315,7 @@ tu_wnditem_t*   tu_wnd_addfieldlayer(tu_window_t* wndp, tu_field_t* fldp, tu_lay
     int             rc = 0;
     memset(&item, 0, sizeof(struct tu_wnditem));
     memcpy(&item, fldp, sizeof(struct tu_field));
-    strcpy(item.text, fldp->text);
+    /*strcpy(item.text, fldp->text);*/
     rc = jsw_rbinsert(wndp->children, &item);
     if (1 == rc) /*insert successfully*/
     {
@@ -1279,6 +1337,10 @@ tu_wnditem_t*   tu_wnd_addfieldlayer(tu_window_t* wndp, tu_field_t* fldp, tu_lay
                 }
                 wndp->activep = newp;
             }
+        }
+        if (fldp->text)
+        {
+            tu_wnditem_settext(newp, fldp->text);
         }
         
         tu_list_pushback(layp->items, newp, 0);
@@ -1376,7 +1438,7 @@ void tu_wnd__refresh_layer(tu_layer_t* layp, int redraw)
         }
         else
         {
-            tu_fillbox(itemp->x, itemp->y, itemp->w, itemp->h, ' ', 0, 0, redraw);
+            tu_fillbox(itemp->x, itemp->y, itemp->w, itemp->h, ' ', 0, 0, 0, redraw);
         }
         nodep = tu_list_next(nodep);
     }
@@ -1499,6 +1561,7 @@ int tu_lbl__reversefind(const char* text, char ch)
     }
     return i;
 }
+
 void tu_lbl__draw(tu_label_t* lblp)
 {
     tu_wnditem_t* itemp = &lblp->item;
@@ -1547,10 +1610,9 @@ void tu_lbl__draw(tu_label_t* lblp)
     }
     for (; j < h && k >= len; ++j)
     {
-        tu_fillbox(x, y + j, w, 1, ' ', fg, bg, 0);
+        tu_fillbox(x, y + j, w, 1, ' ', fg, bg, attribs, 0);
     }
 }
-
 
 /*input*/
 void tu_inp_setlimit(tu_input_t* inp, int limit)
@@ -1582,6 +1644,257 @@ int tu_inp_setnumber(tu_input_t* inp, int number)
 int tu_inp_getnumber(tu_input_t* inp)
 {
     return atoi(inp->item.text);
+}
+
+/*edit*/
+int tu_edt__getx(tu_edit_t* edtp)
+{
+    return edtp->xcur;
+}
+
+int tu_edt__gety(tu_edit_t* edtp)
+{
+    return edtp->ycur;
+}
+
+void tu_edt__insertchar(tu_edit_t* edtp, char ch)
+{
+    int cx = edtp->xcur;
+    int cy = edtp->ycur;
+    int w  = edtp->item.w;
+    int len = strlen(edtp->lines[cy]);
+
+    if (cy >= edtp->nlines)// && cy < edtp->nrows)
+    {
+        /*check line if it is less than edit->nrows*/
+        edtp->nlines = cy + 1;
+    }
+    if (len >= FIELD_EDIT_MAXTEXT - 1)
+    {
+        return;
+    }
+    memmove(&edtp->lines[cy][cx + 1], &edtp->lines[cy][cx], len - cx + 1);
+    edtp->lines[cy][cx] = ch;
+    edtp->xcur++;
+
+    len = strlen(edtp->lines[cy]);
+    if (len > w)
+    {
+        edtp->xoffset = len - w;
+    }
+}
+
+void tu_edt__insertline(tu_edit_t* edtp)
+{
+    int cx = edtp->xcur;
+    int cy = edtp->ycur;
+    char* line = edtp->lines[cy];
+    if (edtp->nlines >= FIELD_EDIT_MAXLINES)
+    {
+        return;
+    }
+    strcpy(edtp->lines[cy + 1], &line[cx]);
+    line[cx] = 0;
+    edtp->nlines++;
+    edtp->ycur++;
+    edtp->xcur = 0;
+}
+
+void tu_edt__delchar(tu_edit_t* edtp)
+{
+    int cx = edtp->xcur;
+    int cy = edtp->ycur;
+    char* line = edtp->lines[cy];
+    int len = strlen(line);
+    if (cy == 0 && cx == 0)
+    {
+        return;
+    }
+    if (cx > 0)
+    {
+        memmove(&line[cx - 1], &line[cx], len - cx + 1);
+        edtp->xcur--;
+    }
+    else
+    {
+        int i = 0;
+        int prev_len = strlen(edtp->lines[cy - 1]);
+        strcat(edtp->lines[cy - 1], edtp->lines[cy]);
+        for (i = cy; i < edtp->nlines - 1; ++i)
+        {
+            strcpy(edtp->lines[i], edtp->lines[i + 1]);
+        }
+        edtp->nlines--;
+        edtp->ycur--;
+        edtp->xcur = prev_len;
+    }
+}
+
+void tu_edt__updateoffset(tu_edit_t* edtp)
+{
+    if (edtp->xcur >= edtp->item.w)
+    {
+        edtp->xoffset = (edtp->xcur - edtp->item.w);
+    }
+    else
+    {
+        edtp->xoffset = 0;
+    }
+    if (edtp->ycur >= edtp->item.h)
+    {
+        edtp->yoffset = (edtp->ycur - edtp->item.h) + 1;
+    }
+    else
+    {
+        edtp->yoffset = 0;
+    }
+
+}
+int tu_edt__process_event(tu_wnditem_t* itemp, struct tb_event* ev)
+{
+    tu_edit_t* edtp = (tu_edit_t*)itemp;
+    int len = 0;
+    if (ev->key)
+    {
+        switch (ev->key)
+        {
+            case TB_KEY_ARROW_LEFT:
+            {
+                if (edtp->xcur != 0)
+                {
+                    edtp->xcur--;
+                }
+                else if (edtp->ycur > 0)
+                {
+                    edtp->ycur--;
+                    edtp->xcur = strlen(edtp->lines[edtp->ycur]);
+                }
+                break;
+            }
+            case TB_KEY_ARROW_RIGHT:
+            {
+                if (edtp->xcur < strlen(edtp->lines[edtp->ycur]))
+                {
+                    edtp->xcur++;
+                }
+                else if (edtp->ycur < edtp->nlines - 1)
+                {
+                    edtp->ycur++;
+                    edtp->xcur = 0;
+                }
+                break;
+            }
+            case TB_KEY_ARROW_UP:
+            {
+                if (edtp->ycur != 0)
+                {
+                    edtp->ycur--;
+                }
+                edtp->xoffset = 0;
+                break;
+            }
+            case TB_KEY_ARROW_DOWN:
+            {
+                if (edtp->ycur < edtp->nlines - 1)
+                {
+                    edtp->ycur++;
+                }
+                edtp->xoffset = 0;
+                break;
+            }
+            case TB_KEY_ENTER:
+            {
+                tu_edt__insertline(edtp);
+                edtp->xoffset = 0;
+                break;
+            }
+            case TB_KEY_BACKSPACE:
+            case TB_KEY_BACKSPACE2:
+            {
+                tu_edt__delchar(edtp);
+                break;
+            }
+        }
+    }
+    int rowlen = strlen(edtp->lines[edtp->ycur]);
+    if (edtp->xcur > rowlen)
+    {
+        edtp->xcur = rowlen;
+    }
+    if (ev->ch)
+    {
+        tu_edt__insertchar(edtp, ev->ch);
+    }
+    tu_edt__updateoffset(edtp);
+    return 1;
+}
+
+void tu_edt__draw(tu_edit_t* edtp)
+{
+    tu_wnditem_t* itemp = &edtp->item;
+    int y = itemp->y;
+    int x = itemp->x;
+    int w = itemp->w;
+    int h = itemp->h;
+    int fg = itemp->fgcolor;
+    int bg = itemp->bgcolor;
+    int alignment = itemp->alignment;
+    int attribs = itemp->attribs;
+    int i = 0;
+    int xoff = edtp->xoffset;
+    int yoff = edtp->yoffset;
+
+    for (i = 0; i < h; ++i)
+    {
+        int len = strlen(edtp->lines[yoff + i]);
+        /*draw*/      
+        tu_drawtext(x, y + i, w, 
+            &edtp->lines[yoff + i][xoff], 
+            fg, bg, alignment, attribs, 0);
+    }
+    int xcur = x + edtp->xcur;
+    int ycur = y + edtp->ycur;
+    if (xcur >= x + w)
+    {
+        xcur = x + w;
+    }
+    if (ycur >= y + h - 1)
+    {
+        ycur = y + h - 1;
+    }
+    tb_set_cursor(xcur, ycur);
+    tb_present();
+}
+
+int  tu_edt__settext(tu_edit_t* inp, const char* text)
+{
+    return 0;
+}
+
+int tu_edt_getx(tu_edit_t* edtp)
+{
+    return edtp->xcur;
+}
+int tu_edt_gety(tu_edit_t* edtp)
+{
+    return edtp->ycur;
+}
+int tu_edt_getlines(tu_edit_t* edtp)
+{
+    return edtp->nlines;
+}
+int tu_edt_gettext(tu_edit_t* edtp, int line, char* text, int len)
+{
+    if (line < 0 || line >= edtp->nlines)
+    {
+        return -1;
+    }
+    if (len > FIELD_EDIT_MAXTEXT)
+    {
+        len = FIELD_EDIT_MAXTEXT;
+    }
+    strncpy(text, edtp->lines[line], len);
+    return len;
 }
 
 /*listbox*/
@@ -1855,7 +2168,7 @@ void tu_lbx__drawheader(tu_listbox_t* lbxp)
     tu_listheader_t* hdrp = 0;
     
     /*fill blank to cleanup the line*/
-    tu_fillbox(x, y, w, 1, ' ', 0, 0, 0);
+    tu_fillbox(x, y, w, 1, ' ', 0, 0, 0, 0);
     
     /*fill each column header*/
     for (i = lbxp->curcol; i < lbxp->nheaders; ++i)
@@ -1905,7 +2218,7 @@ void tu_lbx__drawrows(tu_listbox_t* lbxp, int y)
         x  = itemp->x;
         cw = 0;
         /*fill blank to cleanup the line*/
-        tu_fillbox(x, y + j, w, 1, ' ', 0, 0, 0);
+        tu_fillbox(x, y + j, w, 1, ' ', 0, 0, 0, 0);
         if (startrow + j >= lbxp->nrows)
         {
             continue; /*just filled the blank*/

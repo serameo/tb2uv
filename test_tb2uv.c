@@ -1,6 +1,16 @@
 #include "termbox2.h"
 #include "tb2uv.h"
 
+#define ID_LISTBOX1     100
+#define ID_EDIT1        101
+#define ID_INPUT1       102
+#define ID_INPUT2       103
+#define ID_INPUT3       104
+#define ID_LABEL1       105
+#define ID_LABEL2       106
+#define ID_LABEL3       107
+#define ID_LABEL4       108
+
 static int on_keydown(int mod, int key, int ch, tu_notify_t* notify)
 {
     tu_window_t* wndp = (tu_window_t*)notify->data;
@@ -14,13 +24,13 @@ static int on_keydown(int mod, int key, int ch, tu_notify_t* notify)
     else if (TB_MOD_ALT == mod &&
             TB_KEY_F1   == key)
     {
-        tu_wnd_setactive(wndp, 50);
+        tu_wnd_setactive(wndp, ID_LISTBOX1);
         return 1;
     }
     else if (TB_MOD_ALT == mod &&
             TB_KEY_F2   == key)
     {
-        tu_wnd_setactive(wndp, 20);
+        tu_wnd_setactive(wndp, ID_EDIT1);
         return 1;
     }
     return 0;   /*return to the global event*/
@@ -29,19 +39,19 @@ static int on_blur(int mod, int key, int ch, tu_notify_t* notify)
 {
     tu_wnditem_t* itemp = (tu_wnditem_t*)notify->data;
     tu_window_t* wndp   = tu_wnditem_getparent(itemp);
-    tu_wnditem_t* label = tu_wnd_getfield(wndp, 10);
+    tu_wnditem_t* label = tu_wnd_getfield(wndp, ID_LABEL1);
     char text[FIELD_MAX_TEXT + 1] = "";
     
     tu_wnditem_gettext(itemp, text, FIELD_MAX_TEXT);
     tu_wnditem_settext(label, text);
     
-    if (notify->id == 30)
+    if (notify->id == ID_INPUT2)
     {
         tu_input_t* inp = (tu_input_t*)itemp;
         int number = tu_inp_getnumber(inp);
         if (number < 100)
         {
-            tu_wnditem_settext(label, "NUMBER MUST BE GREATER THAN 100!!");
+            tu_wnditem_settext(label, "MUST BE GREATER THAN 100!!");
             tu_wnditem_draw(label);
             return 1;
         }
@@ -53,7 +63,7 @@ static int on_focus(int mod, int key, int ch, tu_notify_t* notify)
 {
     tu_wnditem_t* itemp = (tu_wnditem_t*)notify->data;
     tu_window_t* wndp   = tu_wnditem_getparent(itemp);
-    tu_wnditem_t* label = tu_wnd_getfield(wndp, 11);
+    tu_wnditem_t* label = tu_wnd_getfield(wndp, ID_LABEL2);
     char text[FIELD_MAX_TEXT + 1] = "";
     
     tu_wnditem_gettext(itemp, text, FIELD_MAX_TEXT);
@@ -65,12 +75,12 @@ static int on_notify(int mod, int key, int ch, tu_notify_t* notify)
 {
     tu_wnditem_t* itemp  = (tu_wnditem_t*)notify->data;
     tu_window_t*  wndp   = tu_wnditem_getparent(itemp);
-    tu_wnditem_t* label  = tu_wnd_getfield(wndp, 10);
-    tu_wnditem_t* label2 = tu_wnd_getfield(wndp, 11);
-    tu_wnditem_t* label3 = tu_wnd_getfield(wndp, 12);
+    tu_wnditem_t* label  = tu_wnd_getfield(wndp, ID_LABEL1);
+    tu_wnditem_t* label2 = tu_wnd_getfield(wndp, ID_LABEL2);
+    tu_wnditem_t* label3 = tu_wnd_getfield(wndp, ID_LABEL3);
     char text[FIELD_MAX_TEXT + 1] = "";
 
-    if (notify->id == 50)
+    if (notify->id == ID_LISTBOX1)
     {
         tu_listbox_t* lbxp = (tu_listbox_t*)itemp;
         int currow = tu_lbx_getcursel(lbxp);
@@ -95,9 +105,9 @@ static int on_notify(int mod, int key, int ch, tu_notify_t* notify)
                 break;
         }
     }
-    if (notify->id == 20 ||
-        notify->id == 30 ||
-        notify->id == 40)
+    if (notify->id == ID_INPUT1 ||
+        notify->id == ID_INPUT2 ||
+        notify->id == ID_INPUT3)
     {
         tu_wnditem_gettext(itemp, text, FIELD_MAX_TEXT);
         tu_wnditem_settext(label3, text);
@@ -106,7 +116,7 @@ static int on_notify(int mod, int key, int ch, tu_notify_t* notify)
     return 0;   /*return to the global event*/
 }
 
-static void init_listbox(tu_window_t*    wndp)
+static void init_listbox(tu_window_t* wndp, int id)
 {
     tu_field_t      fld;
     tu_header_t     headers[4];
@@ -117,7 +127,7 @@ static void init_listbox(tu_window_t*    wndp)
 
     layp = tu_wnd_newlayer(wndp);
     /*tu_lay_visible(layp, 0);*//*test: hide layer*/
-    tu_fld_initlistbox(&fld, 50, 31, 4, 30, 5, "THIS IS A LISTBOX", 0);
+    tu_fld_initlistbox(&fld, id, 31, 4, 30, 5, "THIS IS A LISTBOX", 0, 0, 0);
     itemp = tu_wnd_addfieldlayer(wndp, &fld, layp);
     lbxp = (tu_listbox_t*)itemp;
 
@@ -217,51 +227,59 @@ static void init_controls()
     tu_window_t*    wndp    = tu_wnd_new();
     tu_input_t*     inp     = 0;
     tu_wnditem_t*   itemp   = 0;
-    
-    tu_fld_initlabel(&fld, 10,  0, 0, 30, 1, "PRESS ALT+F3 TO QUIT", 0);
+
+    tu_fld_initedit(&fld, ID_EDIT1, 71, 0, 30, 10, "", 0, 0, 0);
     itemp = tu_wnd_addfield(wndp, &fld);
-    tu_wnditem_setattribs(itemp, FIELD_REVERSE);
+    tu_wnditem_setcolor(itemp, 0, FIELD_BLUE);
+
+    tu_fld_initlabel(&fld, ID_LABEL1,  0, 0, 30, 1, "PRESS ALT+F3 TO QUIT", 0, FIELD_REVERSE, 0);
+    itemp = tu_wnd_addfield(wndp, &fld);
+    /*tu_wnditem_setattribs(itemp, FIELD_REVERSE);*/
     tu_wnditem_setcolor(itemp, FIELD_CYAN, FIELD_BLUE);
     
-    tu_fld_initlabel(&fld, 11,  0, 1, 30, 1, "INFORMATION HERE!!", 0);
+    tu_fld_initlabel(&fld, ID_LABEL2,  0, 1, 30, 1, "INFORMATION HERE!!", 0, 0, 0);
     itemp = tu_wnd_addfield(wndp, &fld);
     /*tu_wnditem_setattribs(itemp, FIELD_REVERSE);*/
     tu_wnditem_setcolor(itemp, 0, FIELD_BLUE);
 
-    tu_fld_initlabel(&fld, 12,  0, 2, 30, 1, "TRY TEXT ME!!", 0);
+    tu_fld_initlabel(&fld, ID_LABEL3,  0, 2, 30, 1, "TRY TEXT ME!!", 0, 0, 0);
     itemp = tu_wnd_addfield(wndp, &fld);
     /*tu_wnditem_setattribs(itemp, FIELD_REVERSE);*/
     tu_wnditem_setcolor(itemp, 0, FIELD_GREEN);
 
-    tu_fld_initlabel(&fld, 13,  0, 3, 30, 4, 
-        "THIS IS AN EXAMPLE THE LONG TEXT THAT WILL BE AUTOMATICALLY WRAPPED", 
-        0);
+    /*tu_drawbox(0, 10, 20, 10, '-', '|', '+', 0, 0, 0, 0);*/
+    tu_fld_initlabel(&fld, ID_LABEL4,  1, 11, 19, 9, 
+        "the quick brown fox is jumping over the lazy dog."
+        "THE QUICK BROWN FOX IS JUMPING OVER THE LAZY DOG.",
+        FIELD_CENTER, FIELD_UNDERLINE, 0);
     itemp = tu_wnd_addfield(wndp, &fld);
-    tu_wnditem_setattribs(itemp, FIELD_UNDERLINE);
-    tu_wnditem_setcolor(itemp, 0, FIELD_YELLOW);
+    /*tu_wnditem_setattribs(itemp, FIELD_UNDERLINE);*/
+    tu_wnditem_setcolor(itemp, 0, FIELD_RED);
     tu_wnditem_setflags(itemp, FIELD_LABEL_WRAPTEXT);
+    /*tu_wnditem_setalignment(itemp, FIELD_RIGHT);*/
+    /*tu_wnditem_setalignment(itemp, FIELD_CENTER);*/
 
-    tu_fld_initinput(&fld,  20, 31, 0, 20, 1, 0);
+    tu_fld_initinput(&fld,  ID_INPUT1, 31, 0, 20, 1, "", 0, 0, 0);
     itemp = tu_wnd_addfield(wndp, &fld);
     tu_wnditem_setcolor(itemp, FIELD_MAGENTA, 0);
     tu_wnditem_setflags(itemp, FIELD_INPUT_PASSWORD);
     inp = (tu_input_t*)itemp;
     tu_inp_setlimit(inp, 8);
 
-    tu_fld_initinput(&fld,  30, 31, 1, 20, 1, 0);
+    tu_fld_initinput(&fld,  ID_INPUT2, 31, 1, 20, 1, ">=100", 0, 0, 0);
     itemp = tu_wnd_addfield(wndp, &fld);
     tu_wnditem_setcolor(itemp, FIELD_GREEN, 0);
     tu_wnditem_setflags(itemp, FIELD_INPUT_NUMBER);
     inp = (tu_input_t*)itemp;
-    tu_wnditem_settext(itemp, "9230941");
+    /*tu_wnditem_settext(itemp, "9230941");*/
 
-    tu_fld_initinput(&fld,  40, 31, 2, 20, 1, 0);
+    tu_fld_initinput(&fld,  ID_INPUT3, 31, 2, 20, 1, "HEXANUMBER", 0, 0, 0);
     itemp = tu_wnd_addfield(wndp, &fld);
     tu_wnditem_setcolor(itemp, FIELD_BLUE, 0);
     tu_wnditem_setflags(itemp, FIELD_INPUT_CAPITAL|FIELD_INPUT_HEXNUMBER);
-    tu_wnditem_settext(itemp, "3829addce");
+    /*tu_wnditem_settext(itemp, "3829addce");*/
     
-    init_listbox(wndp);
+    init_listbox(wndp, ID_LISTBOX1);
     
     tu_wnd_setevent(wndp, FIELD_EV_KEYDOWN, on_keydown);
     tu_wnd_setevent(wndp, FIELD_EV_BLUR, on_blur);

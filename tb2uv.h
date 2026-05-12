@@ -16,6 +16,7 @@ enum
 {
     FIELD_LABEL,        /*a label object*/
     FIELD_INPUT,        /*an input object*/
+    FIELD_EDIT,         /*an edit object*/
     FIELD_LISTBOX       /*a listbox object - having column headers and rows*/
 };
 
@@ -38,6 +39,7 @@ typedef struct tu_field     tu_field_t;     /*common field: label*/
 typedef struct tu_wnditem   tu_wnditem_t;   /**/
 typedef struct tu_label     tu_label_t;     /*input field*/
 typedef struct tu_input     tu_input_t;     /*input field*/
+typedef struct tu_edit      tu_edit_t;      /*edit field*/
 typedef struct tu_listbox   tu_listbox_t;   /*listbox field*/
 typedef struct tu_header    tu_header_t;    /*listbox header*/
 typedef struct tu_subitem   tu_subitem_t;   /*listbox subitem*/
@@ -91,6 +93,8 @@ struct tu_notify
 };
 
 #define FIELD_MAX_TEXT                                      (128)
+#define FIELD_EDIT_MAXLINES                                 (1024)
+#define FIELD_EDIT_MAXTEXT                                  (FIELD_MAX_TEXT)
 /*field->alignment (only one)*/
 #define FIELD_LEFT                                          (0)
 #define FIELD_CENTER                                        (1)
@@ -132,7 +136,7 @@ void            tu_drawtext(int x, int y, int width, const char* text, int fg, i
 void            tu_drawline(int x, int y, int width, char ch, int fg, int bg, int attribs, int redraw);
 void            tu_drawvline(int x, int y, int height, char ch, int fg, int bg, int attribs, int redraw);
 void            tu_drawbox(int x, int y, int width, int height, char chhorz, char chvert, char chcorner, int fg, int bg, int attribs, int redraw);
-void            tu_fillbox(int x, int y, int width, int height, char ch, int fg, int bg, int redraw);
+void            tu_fillbox(int x, int y, int width, int height, char ch, int fg, int bg, int attribs, int redraw);
 
 /*initialize*/
 /**
@@ -168,9 +172,10 @@ tu_window_t*    tu_getwindow();
     tu_fld_initlistbox() - To initialize the listbox object
     </summary>
 */
-int             tu_fld_initlabel(tu_field_t* fldp,   int id, int x, int y, int width, int height, const char* text, void* data);
-int             tu_fld_initinput(tu_field_t* fldp,   int id, int x, int y, int width, int height, void* data);
-int             tu_fld_initlistbox(tu_field_t* fldp, int id, int x, int y, int width, int height, const char* text, void* data);
+int             tu_fld_initlabel(tu_field_t* fldp,   int id, int x, int y, int width, int height, const char* text, int alignment, int attribs, void* data);
+int             tu_fld_initinput(tu_field_t* fldp,   int id, int x, int y, int width, int height, const char* text, int alignment, int attribs, void* data);
+int             tu_fld_initlistbox(tu_field_t* fldp, int id, int x, int y, int width, int height, const char* text, int alignment, int attribs, void* data);
+int             tu_fld_initedit (tu_field_t* fldp,   int id, int x, int y, int width, int height, const char* text, int alignment, int attribs, void* data);
 /**
     <summary>
     To draw a generic field object
@@ -298,6 +303,8 @@ unsigned int    tu_wnditem_getflags(tu_wnditem_t* itemp);
 void*           tu_wnditem_setdata(tu_wnditem_t* itemp, void* data);
 void*           tu_wnditem_getdata(tu_wnditem_t* itemp);
 tu_layer_t*     tu_wnditem_getlayer(tu_wnditem_t* itemp);
+void            tu_wnditem_setalignment(tu_wnditem_t* itemp, int alignment);
+int             tu_wnditem_getalignment(tu_wnditem_t* itemp);
 
 /*input*/
 void            tu_inp_setlimit(tu_input_t* inp, int limit);
@@ -305,6 +312,13 @@ int             tu_inp_setpassword(tu_input_t* inp, const char* password);
 int             tu_inp_getpassword(tu_input_t* inp, char* password, int len);
 int             tu_inp_setnumber(tu_input_t* inp, int number);
 int             tu_inp_getnumber(tu_input_t* inp);
+
+/*edit*/
+int             tu_edt_getx(tu_edit_t* edtp);
+int             tu_edt_gety(tu_edit_t* edtp);
+int             tu_edt_getlines(tu_edit_t* edtp);
+int             tu_edt_gettext(tu_edit_t* edtp, int line, char* text, int len);
+
 /*listbox*/
 void            tu_lbx_reset(tu_listbox_t* lbxp);
 int             tu_lbx_addheader(tu_listbox_t* lbxp, tu_header_t* hdrp, int nheaders);
