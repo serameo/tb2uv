@@ -49,7 +49,7 @@ static int on_blur(int mod, int key, int ch, tu_notify_t* notify)
     {
         tu_input_t* inp = (tu_input_t*)itemp;
         int number = tu_inp_getnumber(inp);
-        if (number < 100)
+        if (number <= 100)
         {
             tu_wnditem_settext(label, "MUST BE GREATER THAN 100!!");
             tu_wnditem_draw(label);
@@ -74,7 +74,8 @@ static int on_focus(int mod, int key, int ch, tu_notify_t* notify)
 static int on_notify(int mod, int key, int ch, tu_notify_t* notify)
 {
     tu_wnditem_t* itemp  = (tu_wnditem_t*)notify->data;
-    tu_window_t*  wndp   = tu_wnditem_getparent(itemp);
+    tu_window_t*  wndp   = (notify->id != 0 ?   tu_wnditem_getparent(itemp) : 
+                                                (tu_window_t*)notify->data);
     tu_wnditem_t* label  = tu_wnd_getfield(wndp, ID_LABEL1);
     tu_wnditem_t* label2 = tu_wnd_getfield(wndp, ID_LABEL2);
     tu_wnditem_t* label3 = tu_wnd_getfield(wndp, ID_LABEL3);
@@ -103,7 +104,15 @@ static int on_notify(int mod, int key, int ch, tu_notify_t* notify)
                 tu_wnditem_settext(label3, subitem.text);
                 tu_wnditem_draw(label3);
                 break;
+            case FIELD_NOTIFY_MOUSELEFTCLICKED:
+            case FIELD_NOTIFY_MOUSERIGHTCLICKED:
+            case FIELD_NOTIFY_MOUSEMIDDLECLICKED:
+                sprintf(text, "ID:%d got clicked (%d)", notify->id, notify->code);
+                tu_wnditem_settext(label3, text);
+                tu_wnditem_draw(label3);
+                break;
         }
+        return 0;
     }
     if (notify->id == ID_INPUT1 ||
         notify->id == ID_INPUT2 ||
@@ -112,6 +121,26 @@ static int on_notify(int mod, int key, int ch, tu_notify_t* notify)
         tu_wnditem_gettext(itemp, text, FIELD_MAX_TEXT);
         tu_wnditem_settext(label3, text);
         tu_wnditem_draw(label3);
+        return 0;
+    }
+
+    if ((notify->code == FIELD_NOTIFY_MOUSELEFTCLICKED) ||
+        (notify->code == FIELD_NOTIFY_MOUSERIGHTCLICKED) ||
+        (notify->code == FIELD_NOTIFY_MOUSEMIDDLECLICKED))
+    {
+        if (notify->id == 0)
+        {
+            /*data = wndp*/
+            wndp = (tu_window_t*)notify->data;
+            sprintf(text, "window got clicked (%d)", notify->code);
+            tu_wnditem_settext(label3, text);
+            tu_wnditem_draw(label3);
+            return 0;
+        }
+        sprintf(text, "ID:%d got clicked (%d)", notify->id, notify->code);
+        tu_wnditem_settext(label3, text);
+        tu_wnditem_draw(label3);
+        return 0;
     }
     return 0;   /*return to the global event*/
 }
@@ -295,6 +324,7 @@ static void init_controls()
 int main()
 {
     tu_init();
+    /*tu_initoptions(TB_INPUT_ESC | TB_INPUT_MOUSE);*/
     tu_drawbox(0, 10, 20, 10, '-', '|', '+', 0, 0, 0, 0);
     init_controls();
     tu_run();

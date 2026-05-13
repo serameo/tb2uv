@@ -31,9 +31,12 @@ enum
 {
     FIELD_NOTIFY_PRESSEDENTER,
     FIELD_NOTIFY_ITEMCHANGING,
-    FIELD_NOTIFY_ITEMCHANGED
+    FIELD_NOTIFY_ITEMCHANGED,
+    FIELD_NOTIFY_MOUSELEFTCLICKED,
+    FIELD_NOTIFY_MOUSEMIDDLECLICKED,
+    FIELD_NOTIFY_MOUSERIGHTCLICKED,
+    FIELD_NOTIFY_MOUSERELEASED
 };
-
 
 typedef struct tu_field     tu_field_t;     /*common field: label*/
 typedef struct tu_wnditem   tu_wnditem_t;   /**/
@@ -117,7 +120,8 @@ struct tu_notify
 #define FIELD_INPUT_HEXNUMBER                               (0x00000008)
 #define FIELD_INPUT_CAPITAL                                 (0x00000010)
 /*listbox flags*/
-#define FIELD_LISTBOX_HIDEHEADER                            (0X00000001)
+#define FIELD_LISTBOX_HIDEHEADER                            (0x00000001)
+#define FIELD_LISTBOX_SORTABLE                              (0x00000002)
 /*field->fgcolor, bgcolor, fgdis, bgdis*/
 #define FIELD_DEFAULT                                       (0x0000)
 #define FIELD_BLACK                                         (0x0001)
@@ -145,6 +149,7 @@ void            tu_fillbox(int x, int y, int width, int height, char ch, int fg,
     </summary>
 */
 int             tu_init();
+int             tu_initoptions(int mode);
 /*
 tu_run()
     To run the system environment
@@ -257,6 +262,8 @@ tu_wnditem_t*   tu_wnd_getfirst(tu_window_t* wndp);
 tu_wnditem_t*   tu_wnd_getlast(tu_window_t* wndp);
 tu_wnditem_t*   tu_wnd_getnext(tu_window_t* wndp);
 tu_wnditem_t*   tu_wnd_getprev(tu_window_t* wndp);
+
+tu_wnditem_t*   tu_wnd_finditem(tu_window_t* wndp, int x, int y);
 /**
     <summary>
     To draw all items in the window
@@ -265,14 +272,13 @@ tu_wnditem_t*   tu_wnd_getprev(tu_window_t* wndp);
 void            tu_wnd_refresh(tu_window_t* wndp);
 /**
     <summary>
-int (*on_event)(int mod, int key, int ch, int id, void* data);
+int (*on_event)(int mod, int key, int ch, tu_notify_t* notify);
     </summary>
     <parameters>
     mod     - TB_MOD_xxx (see termbox2.h)
     key     - TB_KEY_xxx (see termbox2.h)
     ch      - unicode char
-    id      - user defined
-    data    - system will always send to the current active window pointer
+    notify  - notify object
     </parameters>
     <returns>
     0 - to continue the global event
@@ -281,7 +287,23 @@ int (*on_event)(int mod, int key, int ch, int id, void* data);
 */
 void            tu_wnd_setevent(tu_window_t* wndp, int event,
                     int (*on_event)(int mod, int key, int ch, tu_notify_t* notify));
-
+/**
+    <summary>
+int (*on_mouse)(int mod, int key, int ch, int id, void* data);
+    </summary>
+    <parameters>
+    mod     - TB_MOD_xxx (see termbox2.h)
+    key     - TB_KEY_xxx (see termbox2.h)
+    ch      - unicode char
+    notify  - notify object
+    </parameters>
+    <returns>
+    0 - to continue the global event
+    otherwise - skip the global event and wait for the next event
+    </returns>
+*/
+void            tu_wnd_setmouseevent(tu_window_t* wndp, 
+                    int (*on_mouse)(int mod, int key, int x, int y, tu_notify_t* notify));
 /*layer*/
 int             tu_lay_id(tu_layer_t* layp);
 int             tu_lay_show(tu_layer_t* layp, int show);
@@ -300,11 +322,20 @@ void            tu_wnditem_draw(tu_wnditem_t* itemp);
 tu_window_t*    tu_wnditem_getparent(tu_wnditem_t* itemp);
 void            tu_wnditem_setflags(tu_wnditem_t* itemp, unsigned int flags);
 unsigned int    tu_wnditem_getflags(tu_wnditem_t* itemp);
+int             tu_wnditem_isonflag(tu_wnditem_t* itemp, unsigned int flags);
 void*           tu_wnditem_setdata(tu_wnditem_t* itemp, void* data);
 void*           tu_wnditem_getdata(tu_wnditem_t* itemp);
 tu_layer_t*     tu_wnditem_getlayer(tu_wnditem_t* itemp);
 void            tu_wnditem_setalignment(tu_wnditem_t* itemp, int alignment);
 int             tu_wnditem_getalignment(tu_wnditem_t* itemp);
+int             tu_wnditem_getsize(tu_wnditem_t* itemp);
+int             tu_wnditem_gettype(tu_wnditem_t* itemp);
+int             tu_wnditem_getid(tu_wnditem_t* itemp);
+int             tu_wnditem_getx(tu_wnditem_t* itemp);
+int             tu_wnditem_gety(tu_wnditem_t* itemp);
+int             tu_wnditem_getwidth(tu_wnditem_t* itemp);
+int             tu_wnditem_getheight(tu_wnditem_t* itemp);
+void            tu_wnditem_move(tu_wnditem_t* itemp, int x, int y, int w, int h, int redraw);
 
 /*input*/
 void            tu_inp_setlimit(tu_input_t* inp, int limit);

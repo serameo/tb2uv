@@ -213,6 +213,7 @@ struct tu_window
     tu_linklist_t*      layers;         /*group of items*/
     int                 layid;          /*allocate the layer id*/
     /*events*/
+    int                 (*on_mouse)  (int mod, int key, int x, int y, tu_notify_t* notify);
     int                 (*on_keydown)(int mod, int key, int ch, tu_notify_t* notify);    /*data = self   (tu_window_t*)  */
     int                 (*on_blur)   (int mod, int key, int ch, tu_notify_t* notify);    /*data = child  (tu_wnditem_t*) */
     int                 (*on_focus)  (int mod, int key, int ch, tu_notify_t* notify);    /*data = child  (tu_wnditem_t*) */
@@ -359,6 +360,31 @@ void tu_wnditem_draw(tu_wnditem_t* itemp)
     tu_wnditem__draw(itemp, 1);
 }
 
+tu_wnditem_t* tu_wnd__finditem_fromxy(tu_window_t* wndp, int x, int y)
+{
+    tu_listnode_t* laynodep = tu_list_last(wndp->layers);
+    tu_layer_t* layp = 0;
+    tu_listnode_t* itemnodep = 0;
+    tu_wnditem_t* itemp = 0;
+    while (laynodep)
+    {
+        layp = (tu_layer_t*)tu_list_data(laynodep);
+        itemnodep = tu_list_last(layp->items);
+        while (itemnodep)
+        {
+            itemp = (tu_wnditem_t*)tu_list_data(itemnodep);
+            if ((x >= itemp->x && x < (itemp->x + itemp->w)) &&
+                (y >= itemp->y && y < (itemp->y + itemp->h)))
+            {
+                return itemp;
+            }
+            itemnodep = tu_list_prev(itemnodep);
+        }
+        laynodep = tu_list_prev(laynodep);
+    }
+    return NULL;
+}
+
 static void on_termbox_event(uv_poll_t* handle, int status, int events)
 {
     struct tb_event ev;
@@ -459,6 +485,50 @@ static void on_termbox_event(uv_poll_t* handle, int status, int events)
                 /*wndp->activep = itemp;*/
             }
         } /*ev.key = TB_KEY_*/
+        else if (ev.type == TB_EVENT_MOUSE)
+        {
+            /*find the tu_wnditem_t when mouse clicked*/
+            /*on_mouse*/
+            if (wndp->on_mouse)
+            {
+                notify.id = 0;
+                notify.data = wndp;
+                notify.code = 0;
+                rc = wndp->on_mouse(ev.mod, ev.key, ev.x, ev.y, &notify);
+            }
+            else if (wndp->on_notify)
+            {
+                /*FIELD_NOTIFY_MOUSECLICKED*/
+                tu_wnditem_t* clickeditemp = tu_wnd__finditem_fromxy(wndp, ev.x, ev.y);
+                if (NULL == clickeditemp)
+                {
+                    notify.id   = 0;
+                    notify.data = wndp;
+                }
+                else
+                {
+                    notify.id   = clickeditemp->id;
+                    notify.data = clickeditemp;
+                }
+                if (ev.key == TB_KEY_MOUSE_LEFT)
+                {
+                    notify.code = FIELD_NOTIFY_MOUSELEFTCLICKED;
+                }
+                else if (ev.key == TB_KEY_MOUSE_MIDDLE)
+                {
+                    notify.code = FIELD_NOTIFY_MOUSEMIDDLECLICKED;
+                }
+                else if (ev.key == TB_KEY_MOUSE_RIGHT)
+                {
+                    notify.code = FIELD_NOTIFY_MOUSERIGHTCLICKED;
+                }
+                else if (ev.key == TB_KEY_MOUSE_RELEASE)
+                {
+                    notify.code = FIELD_NOTIFY_MOUSERELEASED;
+                }
+                rc = wndp->on_notify(ev.mod, ev.key, 0, &notify);
+            }
+        }
     } /*having a window pointer*/
     else if (TB_OK == rc)
     {
@@ -470,11 +540,15 @@ static void on_termbox_event(uv_poll_t* handle, int status, int events)
     }
 }
 
-int     tu_init()
+int tu_initoptions(int mode)
 {
     struct tu__env* envp = tu__getinstance();
     /*termbox2*/
     tb_init();
+    if (mode)
+    {
+        tb_set_input_mode(mode);
+    }
 
     envp->events = jsw_rbnew(tu_env__cmp, tu_env__dup, tu_env__rel);
 
@@ -492,6 +566,11 @@ int     tu_init()
     memset(g_blank, ' ', sizeof(g_blank));
     g_blank[FIELD_MAX_TEXT] = 0;
     return 0;
+}
+
+int tu_init()
+{
+    tu_initoptions(0);
 }
 
 void tu_shutdown()
@@ -801,6 +880,11 @@ unsigned int tu_wnditem_getflags(tu_wnditem_t* itemp)
     return itemp->flags;
 }
 
+int tu_wnditem_isonflag(tu_wnditem_t* itemp, unsigned int flags)
+{
+    return (itemp->flags & flags);
+}
+
 void tu_wnditem_setalignment(tu_wnditem_t* itemp, int alignment)
 {
     itemp->alignment = alignment;
@@ -895,6 +979,53 @@ int tu_wnditem_isvisible(tu_wnditem_t* itemp)
 void tu_wnditem_visible(tu_wnditem_t* itemp, int visible)
 {
     itemp->visible = visible;
+}
+
+int tu_wnditem_getsize(tu_wnditem_t* itemp)
+{
+    return itemp->size;
+}
+
+int tu_wnditem_gettype(tu_wnditem_t* itemp)
+{
+    return itemp->type;
+}
+
+int tu_wnditem_getid(tu_wnditem_t* itemp)
+{
+    return itemp->id;
+}
+
+int tu_wnditem_getx(tu_wnditem_t* itemp)
+{
+    return itemp->x;
+}
+
+int tu_wnditem_gety(tu_wnditem_t* itemp)
+{
+    return itemp->y;
+}
+
+int tu_wnditem_getwidth(tu_wnditem_t* itemp)
+{
+    return itemp->w;
+}
+
+int tu_wnditem_getheight(tu_wnditem_t* itemp)
+{
+    return itemp->h;
+}
+
+void tu_wnditem_move(tu_wnditem_t* itemp, int x, int y, int w, int h, int redraw)
+{
+    itemp->x = x;
+    itemp->y = y;
+    itemp->w = w;
+    itemp->h = h;
+    if (redraw)
+    {
+        tu_wnditem_draw(itemp);
+    }
 }
 
 int  tu_inp__settext(tu_input_t* inp, const char* text)
@@ -1260,8 +1391,13 @@ void tu_wnd_removefield(tu_window_t* wndp, int id)
 tu_wnditem_t* tu_wnd_getfield(tu_window_t* wndp, int id)
 {
     tu_wnditem_t item;
+    tu_wnditem_t* itemp = 0;
+    if (!wndp)
+    {
+        return NULL;
+    }
     item.id = id;
-    tu_wnditem_t* itemp = jsw_rbfind(wndp->children, &item);
+    itemp = jsw_rbfind(wndp->children, &item);
     return itemp;
 }
 
@@ -1425,6 +1561,11 @@ tu_wnditem_t*     tu_wnd_getprev(tu_window_t* wndp)
     return itemp;
 }
 
+tu_wnditem_t*   tu_wnd_finditem(tu_window_t* wndp, int x, int y)
+{
+    return tu_wnd__finditem_fromxy(wndp, x, y);
+}
+
 void tu_wnd__refresh_layer(tu_layer_t* layp, int redraw)
 {
     tu_wnditem_t* itemp = 0;
@@ -1547,6 +1688,11 @@ void tu_wnd_setevent(tu_window_t* wndp, int event,
     }
 }
 
+void tu_wnd_setmouseevent(tu_window_t* wndp, 
+    int (*on_mouse)(int mod, int key, int x, int y, tu_notify_t* notify))
+{
+    wndp->on_mouse = on_mouse;
+}
 /*label*/
 int tu_lbl__reversefind(const char* text, char ch)
 {
@@ -2404,7 +2550,7 @@ void tu_lbx_sort(tu_listbox_t* lbxp, int col, int asc)
     /*create a temp array*/
     int rowsize = sizeof(struct tu_listsubitem) * 10;
     int rownode = sizeof(struct tu_listsubitem) * lbxp->nheaders;
-    int tabsize = rowsize * lbxp->nrows;
+    /*int tabsize = rowsize * lbxp->nrows;*/
     tu_listnode_t* nodep = tu_list_first(lbxp->rowp);
     tu_row_t* tabp = 0;
     int i = 0;
@@ -2413,7 +2559,7 @@ void tu_lbx_sort(tu_listbox_t* lbxp, int col, int asc)
     tu_listsubitem_t* dstp = 0;
     tu_listnode_t* dstnodep = 0;
 
-    if (lbxp->nrows < 2)
+    if (lbxp->nrows < 2 || 0 == (FIELD_LISTBOX_SORTABLE & lbxp->item.flags))
     {
         /*zero or one row*/
         return;
