@@ -337,20 +337,82 @@ tu_wnditem_t* tu_wnd__finditem_fromxy(tu_window_t* wndp, int x, int y)
     while (laynodep)
     {
         layp = (tu_layer_t*)tu_list_data(laynodep);
-        itemnodep = tu_list_last(layp->items);
-        while (itemnodep)
+        if (layp->visible)
         {
-            itemp = (tu_wnditem_t*)tu_list_data(itemnodep);
-            if ((x >= itemp->x && x < (itemp->x + itemp->w)) &&
-                (y >= itemp->y && y < (itemp->y + itemp->h)))
+            itemnodep = tu_list_last(layp->items);
+            while (itemnodep)
             {
-                return itemp;
+                itemp = (tu_wnditem_t*)tu_list_data(itemnodep);
+                if ((x >= itemp->x && x < (itemp->x + itemp->w)) &&
+                    (y >= itemp->y && y < (itemp->y + itemp->h)))
+                {
+                    return itemp;
+                }
+                itemnodep = tu_list_prev(itemnodep);
             }
-            itemnodep = tu_list_prev(itemnodep);
         }
         laynodep = tu_list_prev(laynodep);
     }
     return NULL;
+}
+
+static void tu_wnd__changefocus(tu_window_t* wndp, struct tb_event* ev, tu_wnditem_t* nextp)
+{
+    tu_notify_t notify = { 0, 0, 0 };
+    tu_wnditem_t* curp = wndp->activep;
+    int canmove = 0;
+    int rc = 0;
+    do
+    {
+        if (nextp && curp && nextp != curp)
+        {
+            if (wndp->on_blur)
+            {
+                notify.id = curp->id;
+                notify.data = curp;
+                rc = wndp->on_blur(ev->mod, ev->key, ev->ch, &notify);
+                if (rc != 0)
+                {
+                    /*not allowed to move*/
+                    break;
+                }
+            }
+            if (wndp->on_focus)
+            {
+                notify.id = nextp->id;
+                notify.data = nextp;
+                rc = wndp->on_focus(ev->mod, ev->key, ev->ch, &notify);
+            }
+            wndp->activep = nextp;
+            canmove = 1;
+        }
+    } while (0);
+    /*moved successfully*/
+    if (nextp == wndp->activep && canmove)
+    {
+        tu_input_t* inp = 0;
+
+        if (curp->type == FIELD_INPUT)
+        {
+            inp = (tu_input_t*)curp;
+            inp->first_focus = 0;
+            tu_inp__draw(inp);
+        }
+        
+        if (nextp->type == FIELD_INPUT)
+        {
+            inp = (tu_input_t*)nextp;
+            inp->first_focus = 1;
+            tu_inp__draw(inp);
+        }
+        else
+        {
+            tu_wnditem_draw(nextp);
+        }
+        
+        /*wndp->activep = itemp;*/
+    }
+
 }
 
 static void on_termbox_event(uv_poll_t* handle, int status, int events)
@@ -401,57 +463,8 @@ static void on_termbox_event(uv_poll_t* handle, int status, int events)
                     tu_wnditem_draw(curp);
                 }
             }
-            /*check if the window implement the events*/
-            do
-            {
-                if (nextp && curp && nextp != curp)
-                {
-                    if (wndp->on_blur)
-                    {
-                        notify.id = curp->id;
-                        notify.data = curp;
-                        rc = wndp->on_blur(ev.mod, ev.key, ev.ch, &notify);
-                        if (rc != 0)
-                        {
-                            /*not allowed to move*/
-                            break;
-                        }
-                    }
-                    if (wndp->on_focus)
-                    {
-                        notify.id = nextp->id;
-                        notify.data = nextp;
-                        rc = wndp->on_focus(ev.mod, ev.key, ev.ch, &notify);
-                    }
-                    wndp->activep = nextp;
-                    canmove = 1;
-                }
-            } while (0);
-            /*moved successfully*/
-            if (nextp == wndp->activep && canmove)
-            {
-                tu_input_t* inp = 0;
-
-                if (curp->type == FIELD_INPUT)
-                {
-                    inp = (tu_input_t*)curp;
-                    inp->first_focus = 0;
-                    tu_inp__draw(inp);
-                }
-                
-                if (nextp->type == FIELD_INPUT)
-                {
-                    inp = (tu_input_t*)nextp;
-                    inp->first_focus = 1;
-                    tu_inp__draw(inp);
-                }
-                else
-                {
-                    tu_wnditem_draw(nextp);
-                }
-                
-                /*wndp->activep = itemp;*/
-            }
+            /*change focus if it is possible*/
+            tu_wnd__changefocus(wndp, &ev, nextp);
         } /*ev.key = TB_KEY_*/
         else if (ev.type == TB_EVENT_MOUSE)
         {
@@ -495,6 +508,15 @@ static void on_termbox_event(uv_poll_t* handle, int status, int events)
                     notify.code = FIELD_NOTIFY_MOUSERELEASED;
                 }
                 rc = wndp->on_notify(ev.mod, ev.key, 0, &notify);
+
+                if (clickeditemp && 
+                    wndp->activep != clickeditemp && 
+                    ev.key == TB_KEY_MOUSE_LEFT &&
+                    clickeditemp->enable &&
+                    clickeditemp->visible)
+                {
+                    tu_wnd__changefocus(wndp, &ev, clickeditemp);
+                }
             }
         }
     } /*having a window pointer*/
