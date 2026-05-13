@@ -149,7 +149,6 @@ void            tu_fillbox(int x, int y, int width, int height, char ch, int fg,
     </summary>
 */
 int             tu_init();
-int             tu_initoptions(int mode);
 /*
 tu_run()
     To run the system environment
@@ -168,7 +167,7 @@ void            tu_shutdown();
 */
 tu_window_t*    tu_setwindow(tu_window_t* wnd);
 tu_window_t*    tu_getwindow();
-
+void            tu_enablemouse();
 /*field*/
 /**
     <summary>

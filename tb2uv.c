@@ -10,44 +10,12 @@ extern int errno;
 #include "tb2uv.h"
 
 /*to hold all environment data*/
-struct tu__event
-{
-    struct tb_event ev; /*termbox2: event*/
-    int             id; /*user defined*/
-};
 struct tu__env 
 {
     uv_poll_t       poll_handler;       /*libuv: input stream*/
     uv_loop_t*      main_loop;          /*libuv: loop*/
-    tu_window_t*    active_wnd;         /*hold windows*/
-    jsw_rbtree_t*   events;             /*hold the registered events*/
+    tu_window_t*    main_wnd;         /*hold windows*/
 };
-static int   tu_env__cmp ( const void *p1, const void *p2 )
-{
-    struct tu__event* ev1 = (struct tu__event*)p1;
-    struct tu__event* ev2 = (struct tu__event*)p2;
-    return  (ev1->ev.key == ev2->ev.key) && 
-            (ev1->ev.ch  == ev2->ev.ch) && 
-            (ev1->ev.mod == ev2->ev.mod);
-}
-static void *tu_env__dup ( void *p1 )
-{
-    struct tu__event* ev1 = (struct tu__event*)p1;
-    struct tu__event* evp = (struct tu__event*)calloc(1, sizeof(struct tu__event));
-    if (evp)
-    {
-        evp->ev.type    = TB_EVENT_KEY;
-        evp->ev.mod     = ev1->ev.mod;
-        evp->ev.key     = ev1->ev.key;
-        evp->ev.ch      = ev1->ev.ch;
-        evp->id         = ev1->id;
-    }
-    return evp;
-}
-static void  tu_env__rel ( void *p )
-{
-    free(p);
-}
 
 struct tu__env* g_envp = NULL;    /*global termbox2 libuv environment*/
 char g_blank[FIELD_MAX_TEXT + 1] = "";
@@ -540,17 +508,11 @@ static void on_termbox_event(uv_poll_t* handle, int status, int events)
     }
 }
 
-int tu_initoptions(int mode)
+int tu_init()
 {
     struct tu__env* envp = tu__getinstance();
     /*termbox2*/
     tb_init();
-    if (mode)
-    {
-        tb_set_input_mode(mode);
-    }
-
-    envp->events = jsw_rbnew(tu_env__cmp, tu_env__dup, tu_env__rel);
 
     /*libuv*/
     envp->main_loop = uv_default_loop();
@@ -560,7 +522,7 @@ int tu_initoptions(int mode)
     uv_poll_start(&envp->poll_handler, UV_READABLE, on_termbox_event);
     
     /*windows*/
-    envp->active_wnd = NULL;
+    envp->main_wnd = NULL;
     
     /*others*/
     memset(g_blank, ' ', sizeof(g_blank));
@@ -568,16 +530,15 @@ int tu_initoptions(int mode)
     return 0;
 }
 
-int tu_init()
+void tu_enablemouse()
 {
-    tu_initoptions(0);
+    tb_set_input_mode(TB_INPUT_ESC | TB_INPUT_MOUSE);
 }
-
 void tu_shutdown()
 {
     struct tu__env* envp = tu__getinstance();
     /*free*/
-    tu_window_t* wndp = envp->active_wnd;
+    tu_window_t* wndp = envp->main_wnd;
     if (wndp)
     {
         tu_wnd_delete(wndp);
@@ -586,26 +547,6 @@ void tu_shutdown()
     /*libs*/
     tb_shutdown();
     uv_stop(uv_default_loop());
-}
-
-void    tu_setcbreak(int cbreak)
-{
-    int fd = 0;
-    int szfd = 0;
-    struct termios tios;
-    memset(&tios, 0, sizeof(tios));
-    tcgetattr(fd, &tios);
-
-    tb_get_fds(&fd, &szfd);
-    if (cbreak)
-    {
-        tios.c_lflag |= (ISIG);
-    }
-    else
-    {
-        tios.c_lflag &= ~(ISIG);
-    }
-    tcsetattr(fd, TCSAFLUSH, &tios);
 }
 
 int     tu_run()
@@ -619,41 +560,15 @@ tu_window_t*    tu_setwindow(tu_window_t* wndp)
 {
     struct tu__env* envp = tu__getinstance();
     tu_window_t* oldwndp = NULL;
-    oldwndp = envp->active_wnd;
-    envp->active_wnd = wndp;
+    oldwndp = envp->main_wnd;
+    envp->main_wnd = wndp;
     return oldwndp;
 }
 
 tu_window_t*    tu_getwindow()
 {
     struct tu__env* envp = tu__getinstance();
-    return envp->active_wnd;
-}
-
-int tu_addevent(int mod, int key, int ch, int id)
-{
-    int rc = 0;
-    struct tu__env* envp = tu__getinstance();
-    struct tu__event ev;
-
-    memset(&ev, 0, sizeof(ev));
-    ev.ev.mod = mod;
-    ev.ev.key = key;
-    ev.ev.ch  = ch;
-    ev.id     = id;
-    rc = jsw_rbinsert(envp->events, &ev);
-    return rc;
-}
-void    tu_removeevent(int mod, int key, int ch)
-{
-    struct tu__env* envp = tu__getinstance();
-    struct tu__event ev;
-
-    memset(&ev, 0, sizeof(ev));
-    ev.ev.mod = mod;
-    ev.ev.key = key;
-    ev.ev.ch  = ch;
-    jsw_rberase(envp->events, &ev);
+    return envp->main_wnd;
 }
 
 static void field_format_text(char* dest, int limit, const char* src, int alignment)

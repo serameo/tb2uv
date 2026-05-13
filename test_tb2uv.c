@@ -159,6 +159,7 @@ static void init_listbox(tu_window_t* wndp, int id)
     tu_fld_initlistbox(&fld, id, 31, 4, 30, 5, "THIS IS A LISTBOX", 0, 0, 0);
     itemp = tu_wnd_addfieldlayer(wndp, &fld, layp);
     lbxp = (tu_listbox_t*)itemp;
+    tu_wnditem_setflags(itemp, FIELD_LISTBOX_SORTABLE|FIELD_LISTBOX_HIDEHEADER);
 
     headers[0].w        = 4;
     headers[0].fgcolor  = 0;
@@ -324,7 +325,7 @@ static void init_controls()
 int main()
 {
     tu_init();
-    /*tu_initoptions(TB_INPUT_ESC | TB_INPUT_MOUSE);*/
+    tu_enablemouse();
     tu_drawbox(0, 10, 20, 10, '-', '|', '+', 0, 0, 0, 0);
     init_controls();
     tu_run();
