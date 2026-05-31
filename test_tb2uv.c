@@ -49,7 +49,7 @@ static int on_blur(int mod, int key, int ch, tu_notify_t* notify)
     {
         tu_input_t* inp = (tu_input_t*)itemp;
         int number = tu_inp_getnumber(inp);
-        if (number <= 100)
+        if (number < 100)
         {
             tu_wnditem_settext(label, "MUST BE GREATER THAN 100!!");
             tu_wnditem_draw(label);

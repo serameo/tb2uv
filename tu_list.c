@@ -1,104 +1,112 @@
 /*
 File:       tu_list.c
-Purpose:    create a linked list
+Purpose:    doubly-linked list
 Author:     Seree R.
 Date:       27-APR-2026
 */
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include "tu_list.h"
 
 struct tu_listnode
 {
-    struct tu_listnode*     link[2]; /*link[0] = prev, link[1] = next*/
-    void*                   data;
+    struct tu_listnode *link[2]; /* link[0]=prev, link[1]=next */
+    void               *data;
 };
 typedef struct tu_listnode tu_listnode_t;
 
-
 struct tu_linklist
 {
-    struct tu_listnode*     head;
-    struct tu_listnode*     tail;
-    cmp_f                   cmp;  /* Compare two items */
-    dup_f                   dup;  /* Clone an item (user-defined) */
-    rel_f                   rel;  /* Destroy an item (user-defined) */
-    size_t                  size;
+    struct tu_listnode *head;
+    struct tu_listnode *tail;
+    cmp_f               cmp; /* compare two items   */
+    dup_f               dup; /* clone an item        */
+    rel_f               rel; /* destroy an item      */
+    size_t              size;
 };
 
-static struct tu_listnode* tu_list__newnode(tu_linklist_t* list, void* data, int clone)
+/* ---------- internal helpers ---------- */
+
+static struct tu_listnode *tu_list__newnode(tu_linklist_t *list, void *data, int clone)
 {
-    struct tu_listnode* newnode = (struct tu_listnode*)calloc(1, sizeof(struct tu_listnode));
-    if (newnode)
+    struct tu_listnode *newnode =
+        (struct tu_listnode *)calloc(1, sizeof(struct tu_listnode));
+    if (!newnode)
+        return NULL;
+    if (clone)
     {
-        if (clone)
+        if (!list->dup)  /* fail fast: caller requested clone but no dup callback */
         {
-            newnode->data = list->dup(data);
+            free(newnode);
+            return NULL;
         }
-        else
-        {
-            newnode->data = data;
-        }
-        newnode->link[0] = newnode->link[1] = NULL;
+        newnode->data = list->dup(data);
+    }
+    else
+    {
+        newnode->data = data;
     }
     return newnode;
 }
 
-int tu_list_init (tu_linklist_t* list, cmp_f cmp, dup_f dup, rel_f rel )
+/* Unlink and free a node; release its data when clone != 0 and rel is set. */
+static void tu_list__freenode(tu_linklist_t *list, struct tu_listnode *node, int clone)
 {
-    list->head = list->tail = NULL;
-    list->cmp = cmp;
-    list->dup = dup;
-    list->rel = rel;
-    list->size = 0;
+    if (clone && list->rel)
+        list->rel(node->data);
+    free(node);
 }
 
-void tu_list_release ( tu_linklist_t *list, int clone )
+/* ---------- init / new / release / delete ---------- */
+
+int tu_list_init(tu_linklist_t *list, cmp_f cmp, dup_f dup, rel_f rel)
 {
-    struct tu_listnode* iter = list->head;
-    struct tu_listnode* delnode = NULL;
+    list->head = list->tail = NULL;
+    list->cmp  = cmp;
+    list->dup  = dup;
+    list->rel  = rel;
+    list->size = 0;
+    return 0;
+}
+
+void tu_list_release(tu_linklist_t *list, int clone)
+{
+    struct tu_listnode *iter = list->head;
     while (iter)
     {
-        delnode = iter;
-        iter = iter->link[1];
-        if (clone)
-        {
-            list->rel(delnode->data);
-        }
-        free(delnode);
+        struct tu_listnode *next = iter->link[1];
+        tu_list__freenode(list, iter, clone);
+        iter = next;
     }
     list->head = list->tail = NULL;
     list->size = 0;
 }
 
-tu_linklist_t *tu_list_new ( cmp_f cmp, dup_f dup, rel_f rel )
+tu_linklist_t *tu_list_new(cmp_f cmp, dup_f dup, rel_f rel)
 {
-    struct tu_linklist* list = (struct tu_linklist*)calloc(1, sizeof(struct tu_linklist));
-    if (NULL == list)
-    {
+    struct tu_linklist *list =
+        (struct tu_linklist *)calloc(1, sizeof(struct tu_linklist));
+    if (!list)
         return NULL;
-    }
     tu_list_init(list, cmp, dup, rel);
     return list;
 }
 
-void tu_list_delete ( tu_linklist_t *list )
+void tu_list_delete(tu_linklist_t *list)
 {
     tu_list_release(list, 0);
     free(list);
 }
 
-int tu_list_pushfront ( tu_linklist_t *list, void *data, int clone )
+/* ---------- insert ---------- */
+
+int tu_list_pushfront(tu_linklist_t *list, void *data, int clone)
 {
-    struct tu_listnode* newnode = tu_list__newnode(list, data, clone);
-    if (NULL == newnode)
-    {
-        return -1; /*not enough memory*/
-    }
+    struct tu_listnode *newnode = tu_list__newnode(list, data, clone);
+    if (!newnode)
+        return -1;
     if (list->head)
     {
-        newnode->link[1] = list->head;
+        newnode->link[1]    = list->head;
         list->head->link[0] = newnode;
     }
     else
@@ -106,20 +114,18 @@ int tu_list_pushfront ( tu_linklist_t *list, void *data, int clone )
         list->tail = newnode;
     }
     list->head = newnode;
-    list->size += 1;
+    list->size++;
     return 0;
 }
 
-int tu_list_pushback ( tu_linklist_t *list, void *data, int clone )
+int tu_list_pushback(tu_linklist_t *list, void *data, int clone)
 {
-    struct tu_listnode* newnode = tu_list__newnode(list, data, clone);
-    if (NULL == newnode)
-    {
-        return -1; /*not enough memory*/
-    }
+    struct tu_listnode *newnode = tu_list__newnode(list, data, clone);
+    if (!newnode)
+        return -1;
     if (list->tail)
     {
-        newnode->link[0] = list->tail;
+        newnode->link[0]    = list->tail;
         list->tail->link[1] = newnode;
     }
     else
@@ -127,70 +133,86 @@ int tu_list_pushback ( tu_linklist_t *list, void *data, int clone )
         list->head = newnode;
     }
     list->tail = newnode;
-    list->size += 1;
+    list->size++;
     return 0;
 }
 
-void tu_list_popfront ( tu_linklist_t *list, int clone )
+int tu_list_insert_after(tu_linklist_t *list, tu_listnode_t *node, void *data, int clone)
 {
-    if (NULL == list->head)
-    {
+    if (!node)
+        return -1;
+    if (node == list->tail)
+        return tu_list_pushback(list, data, clone);
+
+    struct tu_listnode *newnode = tu_list__newnode(list, data, clone);
+    if (!newnode)
+        return -1;
+
+    struct tu_listnode *next = node->link[1];
+    newnode->link[0] = node;
+    newnode->link[1] = next;
+    node->link[1]    = newnode;
+    if (next)
+        next->link[0] = newnode;
+    list->size++;
+    return 0;
+}
+
+int tu_list_insert_before(tu_linklist_t *list, tu_listnode_t *node, void *data, int clone)
+{
+    if (!node)
+        return -1;
+    if (node == list->head)
+        return tu_list_pushfront(list, data, clone);
+
+    struct tu_listnode *newnode = tu_list__newnode(list, data, clone);
+    if (!newnode)
+        return -1;
+
+    struct tu_listnode *prev = node->link[0];
+    newnode->link[0] = prev;
+    newnode->link[1] = node;
+    node->link[0]    = newnode;
+    if (prev)
+        prev->link[1] = newnode;
+    list->size++;
+    return 0;
+}
+
+/* ---------- remove ---------- */
+
+void tu_list_popfront(tu_linklist_t *list, int clone)
+{
+    if (!list->head)
         return;
-    }
-    if (list->head != list->tail)
-    {
-        struct tu_listnode* delnode = list->head;
-        list->head = list->head->link[1];
+    struct tu_listnode *delnode = list->head;
+    list->head = delnode->link[1];
+    if (list->head)
         list->head->link[0] = NULL;
-        if (clone)
-        {
-            list->rel(delnode->data);
-        }
-        free(delnode);
-    }
     else
-    {
-        if (clone)
-        {
-            list->rel(list->head->data);
-        }
-        free(list->head);
-        list->head = list->tail = NULL;
-    }
-    list->size -= 1;
+        list->tail = NULL;
+    tu_list__freenode(list, delnode, clone);
+    list->size--;
 }
 
-void tu_list_popback ( tu_linklist_t *list, int clone )
+void tu_list_popback(tu_linklist_t *list, int clone)
 {
-    if (NULL == list->tail)
-    {
+    if (!list->tail)
         return;
-    }
-    if (list->head != list->tail)
-    {
-        struct tu_listnode* delnode = list->tail;
-        list->tail = list->tail->link[0];
+    struct tu_listnode *delnode = list->tail;
+    list->tail = delnode->link[0];
+    if (list->tail)
         list->tail->link[1] = NULL;
-        if (clone)
-        {
-            list->rel(delnode->data);
-        }
-        free(delnode);
-    }
     else
-    {
-        if (clone)
-        {
-            list->rel(list->tail->data);
-        }
-        free(list->tail);
-        list->head = list->tail = NULL;
-    }
-    list->size -= 1;
+        list->head = NULL;
+    tu_list__freenode(list, delnode, clone);
+    list->size--;
 }
 
-int tu_list_remove( tu_linklist_t *list, tu_listnode_t* node, int clone)
+int tu_list_remove(tu_linklist_t *list, tu_listnode_t *node, int clone)
 {
+    if (!node)
+        return -1;
     if (node == list->head)
     {
         tu_list_popfront(list, clone);
@@ -201,61 +223,140 @@ int tu_list_remove( tu_linklist_t *list, tu_listnode_t* node, int clone)
     }
     else
     {
-        struct tu_listnode* prev = node->link[0];
-        struct tu_listnode* next = node->link[1];
-        
+        struct tu_listnode *prev = node->link[0];
+        struct tu_listnode *next = node->link[1];
         prev->link[1] = next;
         next->link[0] = prev;
-        node->link[0] = node->link[1] = NULL;
-        if (clone)
-        {
-            list->rel(node->data);
-        }
-        free(node);
-        list->size -= 1;
+        tu_list__freenode(list, node, clone);
+        list->size--;
     }
     return 0;
 }
 
-int tu_list_erase ( tu_linklist_t *list, void *data, int clone )
+/* Returns 0 if found and removed, -1 if not found. */
+int tu_list_erase(tu_linklist_t *list, void *data, int clone)
 {
-    struct tu_listnode* iter = list->head;
+    if (!list->cmp)
+        return -1;
+    struct tu_listnode *iter = list->head;
     while (iter)
     {
         if (list->cmp(iter->data, data) == 0)
         {
             tu_list_remove(list, iter, clone);
-            break;
+            return 0;
         }
         iter = iter->link[1];
     }
-    return 1;
+    return -1;
 }
 
-size_t tu_list_size ( tu_linklist_t *list )
+/* ---------- query ---------- */
+
+size_t tu_list_size(tu_linklist_t *list)
 {
     return list->size;
 }
 
-
-tu_listnode_t*  tu_list_first(tu_linklist_t *list)
+tu_listnode_t *tu_list_at(tu_linklist_t *list, size_t index)
 {
-    return (list->head);
-}
-tu_listnode_t*  tu_list_last(tu_linklist_t *list)
-{
-    return (list->tail);
-}
-tu_listnode_t*  tu_list_next(tu_listnode_t *node)
-{
-    return (node ? node->link[1] : NULL);
-}
-tu_listnode_t*  tu_list_prev(tu_listnode_t *node)
-{
-    return (node ? node->link[0] : NULL);
-}
-void* tu_list_data(tu_listnode_t *node)
-{
-    return (node ? node->data : NULL);
+    if (index >= list->size)
+        return NULL;
+    struct tu_listnode *node = list->head;
+    for (size_t i = 0; i < index && node; i++)
+        node = node->link[1];
+    return node;
 }
 
+/* ---------- navigation ---------- */
+
+tu_listnode_t *tu_list_first(tu_linklist_t *list) { return list->head; }
+tu_listnode_t *tu_list_last (tu_linklist_t *list) { return list->tail; }
+
+tu_listnode_t *tu_list_next(tu_listnode_t *node)
+{
+    return node ? node->link[1] : NULL;
+}
+tu_listnode_t *tu_list_prev(tu_listnode_t *node)
+{
+    return node ? node->link[0] : NULL;
+}
+void *tu_list_data(tu_listnode_t *node)
+{
+    return node ? node->data : NULL;
+}
+
+/* ---------- search ---------- */
+
+tu_listnode_t *tu_list_find(tu_linklist_t *list, void *data)
+{
+    if (!list->cmp)
+        return NULL;
+    tu_listnode_t *nodep = list->head;
+    while (nodep)
+    {
+        if (list->cmp(nodep->data, data) == 0)
+            return nodep;
+        nodep = nodep->link[1];
+    }
+    return NULL;
+}
+
+/* Search forward starting *after* nodep. */
+tu_listnode_t *tu_list_findnext(tu_linklist_t *list, tu_listnode_t *nodep, void *data)
+{
+    if (!list->cmp || !nodep)
+        return NULL;
+    nodep = nodep->link[1];
+    while (nodep)
+    {
+        if (list->cmp(nodep->data, data) == 0)
+            return nodep;
+        nodep = nodep->link[1];
+    }
+    return NULL;
+}
+
+tu_listnode_t *tu_list_rfind(tu_linklist_t *list, void *data)
+{
+    if (!list->cmp)
+        return NULL;
+    tu_listnode_t *nodep = list->tail;
+    while (nodep)
+    {
+        if (list->cmp(nodep->data, data) == 0)
+            return nodep;
+        nodep = nodep->link[0];
+    }
+    return NULL;
+}
+
+/* Search backward starting *before* nodep. */
+tu_listnode_t *tu_list_rfindprev(tu_linklist_t *list, tu_listnode_t *nodep, void *data)
+{
+    if (!list->cmp || !nodep)
+        return NULL;
+    nodep = nodep->link[0];
+    while (nodep)
+    {
+        if (list->cmp(nodep->data, data) == 0)
+            return nodep;
+        nodep = nodep->link[0];
+    }
+    return NULL;
+}
+
+/* ---------- iteration ---------- */
+
+void tu_list_foreach(tu_linklist_t *list, tu_list_visitor_f visitor, void *userdata)
+{
+    tu_listnode_t *nodep = list->head;
+    while (nodep)
+    {
+        /* Snapshot next before visitor runs — safe to remove current node inside visitor */
+        tu_listnode_t *nextp = nodep->link[1];
+        if (visitor(nodep->data, userdata) != 0)
+            break;
+        nodep = nextp;
+    }
+}

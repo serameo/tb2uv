@@ -17,7 +17,9 @@ enum
     FIELD_LABEL,        /*a label object*/
     FIELD_INPUT,        /*an input object*/
     FIELD_EDIT,         /*an edit object*/
-    FIELD_LISTBOX       /*a listbox object - having column headers and rows*/
+    FIELD_LISTBOX,      /*a listbox object - having column headers and rows*/
+    FIELD_MENU,         /*a popup/context menu object*/
+    FIELD_MENUBAR       /*a horizontal menu bar holding multiple top-level menus*/
 };
 
 enum
@@ -35,7 +37,9 @@ enum
     FIELD_NOTIFY_MOUSELEFTCLICKED,
     FIELD_NOTIFY_MOUSEMIDDLECLICKED,
     FIELD_NOTIFY_MOUSERIGHTCLICKED,
-    FIELD_NOTIFY_MOUSERELEASED
+    FIELD_NOTIFY_MOUSERELEASED,
+    FIELD_NOTIFY_MENUSELECTED,  /*menu item selected (ENTER pressed); notify->data = tu_menu_t*, id = menu id*/
+    FIELD_NOTIFY_MENUCLOSED     /*menu closed (ESC pressed); notify->data = tu_menu_t*, id = menu id*/
 };
 
 typedef struct tu_field     tu_field_t;     /*common field: label*/
@@ -49,6 +53,8 @@ typedef struct tu_subitem   tu_subitem_t;   /*listbox subitem*/
 typedef struct tu_layer     tu_layer_t;     /*layer to contain tu_wnditem_t items */
 typedef struct tu_window    tu_window_t;    /*container*/
 typedef struct tu_notify    tu_notify_t;    /*notified by tu_wnditem_t */
+typedef struct tu_menu      tu_menu_t;      /*popup/context menu*/
+typedef struct tu_menubar   tu_menubar_t;   /*horizontal menu bar*/
 
 struct tu_field
 {
@@ -98,6 +104,11 @@ struct tu_notify
 #define FIELD_MAX_TEXT                                      (128)
 #define FIELD_EDIT_MAXLINES                                 (1024)
 #define FIELD_EDIT_MAXTEXT                                  (FIELD_MAX_TEXT)
+#define FIELD_MENU_MAXITEMS                                 (32)
+#define FIELD_MENUBAR_MAXENTRIES                            (16)
+#define FIELD_MENUBAR_ENTRY_TEXTMAX                         (32)
+/*menu item flags*/
+#define FIELD_MENU_ITEM_SEPARATOR                           (0x01)  /*non-selectable divider row*/
 /*field->alignment (only one)*/
 #define FIELD_LEFT                                          (0)
 #define FIELD_CENTER                                        (1)
@@ -362,6 +373,74 @@ void            tu_lbx_clear(tu_listbox_t* lbxp);
 int             tu_lbx_setcursel(tu_listbox_t* lbxp, int row, int redraw);
 int             tu_lbx_getcursel(tu_listbox_t* lbxp);
 void            tu_lbx_sort(tu_listbox_t* lbxp, int col, int asc);
+
+/*menu*/
+/**
+    <summary>
+    Initialize a menu field descriptor.
+    The menu widget draws a bordered popup box at (x,y) with size w×h.
+    Inner content area is (w-2) columns × (h-2) rows.
+    </summary>
+*/
+int             tu_fld_initmenu(tu_field_t* fldp, int id, int x, int y, int width, int height, int alignment, int attribs, void* data);
+/**
+    <summary>
+    Add a menu item. Returns the item index (0-based), or -1 if full.
+    Use "---..." or similar for visual separators (not enforced by the widget).
+    </summary>
+*/
+int             tu_mnu_additem(tu_menu_t* mnup, const char* text, void* data);
+int             tu_mnu_getcount(tu_menu_t* mnup);
+int             tu_mnu_getcursel(tu_menu_t* mnup);
+/**
+    <summary>
+    Set the current selection. Adjusts scroll (toprow) automatically.
+    Returns the previous selection.
+    </summary>
+*/
+int             tu_mnu_setcursel(tu_menu_t* mnup, int sel, int redraw);
+int             tu_mnu_getitemtext(tu_menu_t* mnup, int index, char* text, int len);
+void*           tu_mnu_getitemdata(tu_menu_t* mnup, int index);
+void            tu_mnu_clear(tu_menu_t* mnup);
+/*submenu / hierarchy support*/
+void            tu_mnu_setitemsubmenu(tu_menu_t* mnup, int index, int submenu_id);
+int             tu_mnu_getitemsubmenu(tu_menu_t* mnup, int index);
+void            tu_mnu_setparent(tu_menu_t* mnup, int parent_id);
+int             tu_mnu_getparent(tu_menu_t* mnup);
+void            tu_mnu_setitemid(tu_menu_t* mnup, int index, int item_id);
+int             tu_mnu_getitemid(tu_menu_t* mnup, int index);
+void            tu_mnu_setitemflags(tu_menu_t* mnup, int index, int flags);
+int             tu_mnu_getitemflags(tu_menu_t* mnup, int index);
+
+/*menubar*/
+/**
+    <summary>
+    Initialize a menu-bar field descriptor.
+    The bar occupies one row at (x,y) with width w.
+    h is always 1 and is set internally.
+    </summary>
+*/
+int             tu_fld_initmenubar(tu_field_t* fldp, int id, int x, int y, int w, int alignment, int attribs, void* data);
+/**
+    <summary>
+    Append a top-level entry to the bar.
+    text  - title displayed in the bar (max FIELD_MENUBAR_ENTRY_TEXTMAX chars)
+    menu_id - widget ID of the tu_menu_t that should open below this entry.
+    Returns the entry index (0-based), or -1 if full.
+    </summary>
+*/
+int             tu_mbar_addentry(tu_menubar_t* mbarp, const char* text, int menu_id);
+int             tu_mbar_getentrycount(tu_menubar_t* mbarp);
+int             tu_mbar_getcursel(tu_menubar_t* mbarp);
+int             tu_mbar_getentrymenuid(tu_menubar_t* mbarp, int index);
+/**
+    <summary>
+    Activate the menu bar: sets cursel to 0 (or leaves it if already >= 0),
+    then calls tu_wnd_setactive so the bar gets keyboard focus.
+    Convenience wrapper for F10-style activation.
+    </summary>
+*/
+void            tu_mbar_setactive(tu_menubar_t* mbarp, tu_window_t* wndp);
 
 #ifdef __cplusplus
 }

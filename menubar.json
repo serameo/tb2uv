@@ -1,0 +1,79 @@
+{
+  "id": 50,
+  "x": 0, "y": 1,
+  "w": 80,
+  "fg": 0, "bg": 7,
+  "entries": [
+    {
+      "text": " File ",
+      "menu": {
+        "id": 100, "w": 26, "h": 10,
+        "fg": 7, "bg": 4,
+        "items": [
+          { "text": " New           Ctrl+N", "id": 1 },
+          { "text": " Open...       Ctrl+O", "id": 2 },
+          { "text": " Save          Ctrl+S", "id": 3 },
+          { "text": " Save As...          ", "id": 4 },
+          { "text": "-----------------------", "separator": true },
+          {
+            "text": " Recent Files        ",
+            "id": 5,
+            "submenu": {
+              "id": 101, "w": 22, "h": 6,
+              "fg": 7, "bg": 4,
+              "items": [
+                { "text": " project.c          ", "id": 10 },
+                { "text": " tb2uv.h            ", "id": 11 },
+                { "text": " makefile           ", "id": 12 }
+              ]
+            }
+          },
+          { "text": "-----------------------", "separator": true },
+          { "text": " Exit          Alt+F3 ", "id": 99 }
+        ]
+      }
+    },
+    {
+      "text": " Edit ",
+      "menu": {
+        "id": 110, "w": 24, "h": 9,
+        "fg": 7, "bg": 4,
+        "items": [
+          { "text": " Undo          Ctrl+Z", "id": 20 },
+          { "text": " Redo          Ctrl+Y", "id": 21 },
+          { "text": "----------------------", "separator": true },
+          { "text": " Cut           Ctrl+X", "id": 22 },
+          { "text": " Copy          Ctrl+C", "id": 23 },
+          { "text": " Paste         Ctrl+V", "id": 24 },
+          { "text": "----------------------", "separator": true },
+          { "text": " Find...       Ctrl+F", "id": 25 }
+        ]
+      }
+    },
+    {
+      "text": " View ",
+      "menu": {
+        "id": 120, "w": 22, "h": 6,
+        "fg": 7, "bg": 4,
+        "items": [
+          { "text": " Status Bar         ", "id": 30 },
+          { "text": " Line Numbers       ", "id": 31 },
+          { "text": "--------------------", "separator": true },
+          { "text": " Full Screen  F11   ", "id": 32 }
+        ]
+      }
+    },
+    {
+      "text": " Help ",
+      "menu": {
+        "id": 130, "w": 22, "h": 5,
+        "fg": 7, "bg": 4,
+        "items": [
+          { "text": " Documentation      ", "id": 40 },
+          { "text": " Keyboard Map       ", "id": 41 },
+          { "text": " About...           ", "id": 42 }
+        ]
+      }
+    }
+  ]
+}

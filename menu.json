@@ -1,0 +1,44 @@
+{
+  "id": 100,
+  "x": 3, "y": 2,
+  "w": 24, "h": 11,
+  "fg": 7, "bg": 4,
+  "items": [
+    { "text": " New          Ctrl+N", "id": 1 },
+    { "text": " Open...      Ctrl+O", "id": 2 },
+    { "text": " Save         Ctrl+S", "id": 3 },
+    { "text": " Save As...         ", "id": 4 },
+    { "text": "----------------------", "separator": true },
+    {
+      "text": " Recent Files       ",
+      "id": 5,
+      "submenu": {
+        "id": 101,
+        "w": 22, "h": 7,
+        "fg": 7, "bg": 4,
+        "items": [
+          { "text": " project.c          ", "id": 10 },
+          { "text": " tb2uv.h            ", "id": 11 },
+          { "text": " makefile           ", "id": 12 },
+          { "text": "--------------------", "separator": true },
+          {
+            "text": " Archived           ",
+            "id": 13,
+            "submenu": {
+              "id": 102,
+              "w": 20, "h": 5,
+              "fg": 7, "bg": 4,
+              "items": [
+                { "text": " old_v1.c         ", "id": 20 },
+                { "text": " old_v2.c         ", "id": 21 },
+                { "text": " old_v3.c         ", "id": 22 }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    { "text": "----------------------", "separator": true },
+    { "text": " Exit         Alt+F3 ", "id": 99 }
+  ]
+}

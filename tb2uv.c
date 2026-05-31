@@ -115,6 +115,46 @@ struct tu_listsubitem
 };
 typedef struct tu_listsubitem tu_listsubitem_t;
 
+/*menu*/
+struct tu_menuitem_data
+{
+    char    text[FIELD_MAX_TEXT + 1];
+    void*   data;
+    int     submenu_id;     /*widget ID of submenu (0 = no submenu)*/
+    int     item_id;        /*application-level action ID (from JSON "id" field)*/
+    int     flags;          /*FIELD_MENU_ITEM_SEPARATOR etc.*/
+};
+
+struct tu_menu
+{
+    struct tu_wnditem           item;                           /*base object - must be first*/
+    struct tu_menuitem_data     items[FIELD_MENU_MAXITEMS];
+    int                         nitems;
+    int                         cursel;     /*current highlighted row, -1 = none*/
+    int                         toprow;     /*first visible row (scrolling)*/
+    int                         parent_id;  /*parent menu widget ID (0 = root)*/
+};
+typedef struct tu_menu tu_menu_t;
+
+/*menubar*/
+struct tu_menubar_entry
+{
+    char    text[FIELD_MENUBAR_ENTRY_TEXTMAX + 1];
+    int     menu_id;    /*widget ID of the associated tu_menu_t dropdown*/
+    int     x_pos;      /*x offset within bar, relative to item.x*/
+    int     width;      /*display width (strlen of text)*/
+};
+
+struct tu_menubar
+{
+    struct tu_wnditem       item;       /*base object — MUST be first*/
+    int                     count;
+    int                     cursel;     /*highlighted entry index; -1 = none*/
+    int                     open_idx;   /*index of the currently visible dropdown; -1 = none*/
+    struct tu_menubar_entry entries[FIELD_MENUBAR_MAXENTRIES];
+};
+typedef struct tu_menubar tu_menubar_t;
+
 /*sorting*/
 struct tu_row
 {
@@ -248,6 +288,15 @@ void tu_edt__draw(tu_edit_t* edtp);
 int  tu_edt__process_event(tu_wnditem_t* itemp, struct tb_event* ev);
 int  tu_edt__settext(tu_edit_t* inp, const char* text);
 
+void tu_mnu__draw(tu_menu_t* mnup);
+int  tu_mnu__process_event(tu_wnditem_t* itemp, struct tb_event* ev);
+
+void tu_mbar__draw(tu_menubar_t* mbarp);
+int  tu_mbar__process_event(tu_wnditem_t* itemp, struct tb_event* ev);
+static void tu_mnu__close_chain(tu_menu_t* leaf, tu_window_t* wndp, struct tb_event* ev);
+static void tu_mbar__open_menu(tu_menubar_t* mbarp, tu_window_t* wndp);
+static void tu_mbar__switch_menu(tu_menubar_t* mbarp, tu_window_t* wndp, int dir);
+
 static tu_wnditem_t* tu_wnd__getnextinput(tu_window_t* wndp, int dir)
 {
     tu_wnditem_t* itemp = (wndp ? wndp->activep : NULL);
@@ -297,6 +346,11 @@ void tu_wnditem__draw(tu_wnditem_t* itemp, int redraw)
     {
         return;
     }
+    /*skip widgets whose layer is hidden — prevents stale draws after layer close*/
+    if (itemp->layer && itemp->layer->visible == 0)
+    {
+        return;
+    }
     if (itemp->type == FIELD_INPUT)
     {
         tu_inp__draw((tu_input_t*)itemp);
@@ -310,6 +364,16 @@ void tu_wnditem__draw(tu_wnditem_t* itemp, int redraw)
     else if (itemp->type == FIELD_LISTBOX)
     {
         tu_lbx__draw((tu_listbox_t*)itemp);
+        return;
+    }
+    else if (itemp->type == FIELD_MENU)
+    {
+        tu_mnu__draw((tu_menu_t*)itemp);
+        return;
+    }
+    else if (itemp->type == FIELD_MENUBAR)
+    {
+        tu_mbar__draw((tu_menubar_t*)itemp);
         return;
     }
     else if (itemp->type == FIELD_LABEL && itemp->flags & FIELD_LABEL_WRAPTEXT)
@@ -1195,6 +1259,10 @@ int field_process_event(tu_wnditem_t* itemp, struct tb_event* evp)
             return tu_lbx__process_event(itemp, evp);
         case FIELD_EDIT:
             return tu_edt__process_event(itemp, evp);
+        case FIELD_MENU:
+            return tu_mnu__process_event(itemp, evp);
+        case FIELD_MENUBAR:
+            return tu_mbar__process_event(itemp, evp);
     }
     return 0;
 }
@@ -1377,6 +1445,22 @@ void tu_wnditem__init(tu_wnditem_t* itemp)
             edtp->ycur = 0;
             break;
         }
+        case FIELD_MENU:
+        {
+            tu_menu_t* mnup = (tu_menu_t*)itemp;
+            mnup->nitems = 0;
+            mnup->cursel = -1;
+            mnup->toprow = 0;
+            break;
+        }
+        case FIELD_MENUBAR:
+        {
+            tu_menubar_t* mbarp = (tu_menubar_t*)itemp;
+            mbarp->count    = 0;
+            mbarp->cursel   = -1;
+            mbarp->open_idx = -1;
+            break;
+        }
     }
 }
 
@@ -1439,12 +1523,18 @@ tu_wnditem_t* tu_wnd_setactive(tu_window_t* wndp, int id)
     tu_wnditem_t* activep = tu_wnd_getactive(wndp);
     tu_wnditem_t* newp = tu_wnd_getfield(wndp, id);
     int rc = 0;
+    /*when focus returns to the menubar, clear open_idx so the bar
+      knows no dropdown is currently showing*/
+    if (newp && newp->type == FIELD_MENUBAR)
+    {
+        ((tu_menubar_t*)newp)->open_idx = -1;
+    }
     if (NULL != newp && activep != newp && newp->layer->visible != 0)
     {
         if (newp->enable && newp->visible)
         {
             tu_input_t* inp = 0;
-            if (activep->type == FIELD_INPUT)
+            if (activep && activep->type == FIELD_INPUT)
             {
                 inp = (tu_input_t*)wndp->activep;
                 inp->first_focus = 0;
@@ -2613,4 +2703,656 @@ void tu_lbx_reset(tu_listbox_t* lbxp)
     memset(lbxp, 0, sizeof(struct tu_listbox));
     lbxp->currow    = -1;
     lbxp->curcol    = 0;
+}
+
+/*menu*/
+static int tu_mnu__nextsel(tu_menu_t* mnup, int from, int dir)
+{
+    int i = from + dir;
+    while (i >= 0 && i < mnup->nitems)
+    {
+        if (!(mnup->items[i].flags & FIELD_MENU_ITEM_SEPARATOR))
+        {
+            return i;
+        }
+        i += dir;
+    }
+    return from; /*no selectable item found — stay*/
+}
+
+void tu_mnu__draw(tu_menu_t* mnup)
+{
+    tu_wnditem_t* itemp = &mnup->item;
+    int x       = itemp->x;
+    int y       = itemp->y;
+    int w       = itemp->w;
+    int h       = itemp->h;
+    int fg      = itemp->fgcolor;
+    int bg      = itemp->bgcolor;
+    int attribs = itemp->attribs;
+    int inner_w = w - 2;   /*columns available inside the border*/
+    int inner_h = h - 2;   /*rows available inside the border*/
+    int i, row;
+
+    /*draw outer border: spans (x,y) to (x+w-1, y+h-1)*/
+    tu_drawbox(x, y, w - 1, h - 1, '-', '|', '+', fg, bg, attribs, 0);
+
+    /*clear inner area*/
+    tu_fillbox(x + 1, y + 1, inner_w, inner_h, ' ', fg, bg, 0, 0);
+
+    /*draw visible items*/
+    for (i = 0; i < inner_h; ++i)
+    {
+        row = mnup->toprow + i;
+        if (row >= mnup->nitems)
+        {
+            break;
+        }
+        int is_sep = (mnup->items[row].flags & FIELD_MENU_ITEM_SEPARATOR);
+        int is_sel = (row == mnup->cursel && !is_sep);
+        int has_sub = (mnup->items[row].submenu_id != 0);
+        int item_at = attribs | (is_sel ? FIELD_REVERSE : 0);
+
+        if (has_sub && inner_w >= 2)
+        {
+            /*draw text leaving the last column for '>' indicator*/
+            field_draw(x + 1, y + 1 + i, inner_w - 1,
+                mnup->items[row].text, fg, bg, FIELD_LEFT, item_at, 0);
+            char arrow[2] = {'>', 0};
+            field_draw(x + w - 2, y + 1 + i, 1, arrow, fg, bg, FIELD_LEFT, item_at, 0);
+        }
+        else
+        {
+            field_draw(x + 1, y + 1 + i, inner_w,
+                mnup->items[row].text, fg, bg, FIELD_LEFT, item_at, 0);
+        }
+    }
+    tb_present();
+}
+
+static void tu_mnu__open_submenu(tu_window_t* wndp, tu_wnditem_t* itemp, tu_menu_t* mnup)
+{
+    int sel = mnup->cursel;
+    int submenu_id = mnup->items[sel].submenu_id;
+    tu_wnditem_t* subitemp = tu_wnd_getfield(wndp, submenu_id);
+    tu_layer_t*   sublayer = 0;
+    int sub_w, sub_h, sub_x, sub_y;
+
+    if (!subitemp)
+    {
+        return;
+    }
+    sublayer = tu_wnditem_getlayer(subitemp);
+    sub_w    = tu_wnditem_getwidth(subitemp);
+    sub_h    = tu_wnditem_getheight(subitemp);
+
+    /*position: right of parent, aligned to selected item row*/
+    sub_x = itemp->x + itemp->w;
+    sub_y = itemp->y + (sel - mnup->toprow) + 1;
+
+    /*clamp to screen*/
+    if (sub_x + sub_w > tb_width())
+    {
+        sub_x = itemp->x - sub_w; /*try left side*/
+    }
+    if (sub_x < 0)
+    {
+        sub_x = 0;
+    }
+    if (sub_y + sub_h > tb_height())
+    {
+        sub_y = tb_height() - sub_h;
+    }
+    if (sub_y < 0)
+    {
+        sub_y = 0;
+    }
+
+    tu_wnditem_move(subitemp, sub_x, sub_y, sub_w, sub_h, 0);
+    tu_lay_show(sublayer, 1);
+    tu_wnd_setactive(wndp, submenu_id);
+}
+
+static void tu_mnu__close_self(tu_menu_t* mnup, tu_window_t* wndp)
+{
+    tu_layer_t* mylayer = tu_wnditem_getlayer((tu_wnditem_t*)mnup);
+    tu_lay_show(mylayer, 0);
+    tu_wnd_refresh(wndp);
+    if (mnup->parent_id != 0)
+    {
+        tu_wnd_setactive(wndp, mnup->parent_id);
+    }
+}
+
+/*Walk from the selected leaf up through parent_id chain, hiding every
+  dropdown layer.  If the chain reaches a FIELD_MENUBAR, reset it and
+  restore focus to it.  Otherwise just do a full refresh.*/
+static void tu_mnu__close_chain(tu_menu_t* leaf, tu_window_t* wndp, struct tb_event* ev)
+{
+    tu_menu_t* cur = leaf;
+    (void)ev; /*reserved for future use*/
+
+    while (cur != NULL)
+    {
+        tu_layer_t* lay = tu_wnditem_getlayer((tu_wnditem_t*)cur);
+        tu_lay_show(lay, 0);
+
+        int pid = cur->parent_id;
+        if (pid == 0)
+        {
+            break; /*root menu with no parent — done*/
+        }
+
+        tu_wnditem_t* par = tu_wnd_getfield(wndp, pid);
+        if (!par)
+        {
+            break;
+        }
+
+        if (par->type == FIELD_MENUBAR)
+        {
+            tu_menubar_t* mbarp = (tu_menubar_t*)par;
+            mbarp->open_idx = -1;
+            mbarp->cursel   = -1;
+            tu_wnd_refresh(wndp);
+            /*force setactive to proceed even if bar was already activep*/
+            wndp->activep = NULL;
+            tu_wnd_setactive(wndp, par->id);
+            return;
+        }
+
+        if (par->type != FIELD_MENU)
+        {
+            break; /*unexpected parent type*/
+        }
+
+        cur = (tu_menu_t*)par;
+    }
+
+    /*no menubar in chain — just redraw*/
+    tu_wnd_refresh(wndp);
+}
+
+int tu_mnu__process_event(tu_wnditem_t* itemp, struct tb_event* ev)
+{
+    tu_menu_t*   mnup  = (tu_menu_t*)itemp;
+    tu_window_t* wndp  = tu_wnditem_getparent(itemp);
+    tu_notify_t  notify = { itemp->id, itemp, 0 };
+    int inner_h = itemp->h - 2;
+
+    if (!itemp->enable || !itemp->visible)
+    {
+        return 0;
+    }
+    if (mnup->nitems == 0)
+    {
+        return 0;
+    }
+    if (ev->key)
+    {
+        switch (ev->key)
+        {
+            case TB_KEY_ARROW_UP:
+            {
+                int next = tu_mnu__nextsel(mnup, mnup->cursel, -1);
+                if (next != mnup->cursel)
+                {
+                    mnup->cursel = next;
+                    if (mnup->cursel < mnup->toprow)
+                    {
+                        mnup->toprow = mnup->cursel;
+                    }
+                }
+                break;
+            }
+            case TB_KEY_ARROW_DOWN:
+            {
+                int next = tu_mnu__nextsel(mnup, mnup->cursel, 1);
+                if (next != mnup->cursel)
+                {
+                    mnup->cursel = next;
+                    if (mnup->cursel >= mnup->toprow + inner_h)
+                    {
+                        mnup->toprow = mnup->cursel - inner_h + 1;
+                    }
+                }
+                break;
+            }
+            case TB_KEY_ENTER:
+            case TB_KEY_ARROW_RIGHT:
+            {
+                int sel = mnup->cursel;
+                if (sel >= 0 && mnup->items[sel].submenu_id != 0)
+                {
+                    tu_mnu__open_submenu(wndp, itemp, mnup);
+                    return 1;
+                }
+                /*RIGHT on leaf item with menubar parent → switch to next menu*/
+                if (ev->key == TB_KEY_ARROW_RIGHT && mnup->parent_id != 0)
+                {
+                    tu_wnditem_t* par = tu_wnd_getfield(wndp, mnup->parent_id);
+                    if (par && par->type == FIELD_MENUBAR)
+                    {
+                        tu_mbar__switch_menu((tu_menubar_t*)par, wndp, +1);
+                        return 1;
+                    }
+                }
+                /*leaf item — fire MENUSELECTED then close entire chain*/
+                if (ev->key == TB_KEY_ENTER && sel >= 0 &&
+                    !(mnup->items[sel].flags & FIELD_MENU_ITEM_SEPARATOR))
+                {
+                    if (wndp->on_notify)
+                    {
+                        notify.code = FIELD_NOTIFY_MENUSELECTED;
+                        wndp->on_notify(ev->mod, ev->key, ev->ch, &notify);
+                    }
+                    tu_mnu__close_chain(mnup, wndp, ev);
+                    return 1;
+                }
+                break;
+            }
+            case TB_KEY_ESC:
+            case TB_KEY_ARROW_LEFT:
+            {
+                if (mnup->parent_id != 0)
+                {
+                    tu_wnditem_t* par = tu_wnd_getfield(wndp, mnup->parent_id);
+                    /*LEFT with menubar parent → switch to previous menu*/
+                    if (ev->key == TB_KEY_ARROW_LEFT && par && par->type == FIELD_MENUBAR)
+                    {
+                        tu_mbar__switch_menu((tu_menubar_t*)par, wndp, -1);
+                        return 1;
+                    }
+                    /*normal submenu / direct-child-of-menubar ESC: close self*/
+                    tu_mnu__close_self(mnup, wndp);
+                    return 1;
+                }
+                /*root menu with no parent: notify and let caller decide*/
+                if (ev->key == TB_KEY_ESC && wndp->on_notify)
+                {
+                    notify.code = FIELD_NOTIFY_MENUCLOSED;
+                    wndp->on_notify(ev->mod, ev->key, ev->ch, &notify);
+                }
+                break;
+            }
+        }
+    }
+    return 1;
+}
+
+int tu_fld_initmenu(tu_field_t* fldp, int id, int x, int y, int w, int h, int alignment, int attribs, void* data)
+{
+    INIT_FIELD_MEMBER(fldp, sizeof(struct tu_menu), id, FIELD_MENU, x, y, w, h, "", alignment, attribs, data);
+    return 0;
+}
+
+int tu_mnu_additem(tu_menu_t* mnup, const char* text, void* data)
+{
+    int idx = mnup->nitems;
+    if (idx >= FIELD_MENU_MAXITEMS)
+    {
+        return -1;
+    }
+    strncpy(mnup->items[idx].text, text, FIELD_MAX_TEXT);
+    mnup->items[idx].text[FIELD_MAX_TEXT] = 0;
+    mnup->items[idx].data       = data;
+    mnup->items[idx].submenu_id = 0;
+    mnup->items[idx].item_id    = 0;
+    mnup->items[idx].flags      = 0;
+    if (mnup->cursel < 0)
+    {
+        mnup->cursel = 0;
+    }
+    ++mnup->nitems;
+    return idx;
+}
+
+int tu_mnu_getcount(tu_menu_t* mnup)
+{
+    return mnup->nitems;
+}
+
+int tu_mnu_getcursel(tu_menu_t* mnup)
+{
+    return mnup->cursel;
+}
+
+int tu_mnu_setcursel(tu_menu_t* mnup, int sel, int redraw)
+{
+    int old     = mnup->cursel;
+    int inner_h = mnup->item.h - 2;
+    if (sel >= 0 && sel < mnup->nitems)
+    {
+        mnup->cursel = sel;
+        if (sel < mnup->toprow)
+        {
+            mnup->toprow = sel;
+        }
+        else if (sel >= mnup->toprow + inner_h)
+        {
+            mnup->toprow = sel - inner_h + 1;
+        }
+    }
+    if (redraw)
+    {
+        tu_mnu__draw(mnup);
+    }
+    return old;
+}
+
+int tu_mnu_getitemtext(tu_menu_t* mnup, int index, char* text, int len)
+{
+    if (index < 0 || index >= mnup->nitems)
+    {
+        return -1;
+    }
+    strncpy(text, mnup->items[index].text, len);
+    return 0;
+}
+
+void* tu_mnu_getitemdata(tu_menu_t* mnup, int index)
+{
+    if (index < 0 || index >= mnup->nitems)
+    {
+        return NULL;
+    }
+    return mnup->items[index].data;
+}
+
+void tu_mnu_clear(tu_menu_t* mnup)
+{
+    mnup->nitems = 0;
+    mnup->cursel = -1;
+    mnup->toprow = 0;
+}
+
+void tu_mnu_setitemsubmenu(tu_menu_t* mnup, int index, int submenu_id)
+{
+    if (index >= 0 && index < mnup->nitems)
+    {
+        mnup->items[index].submenu_id = submenu_id;
+    }
+}
+
+int tu_mnu_getitemsubmenu(tu_menu_t* mnup, int index)
+{
+    if (index < 0 || index >= mnup->nitems)
+    {
+        return 0;
+    }
+    return mnup->items[index].submenu_id;
+}
+
+void tu_mnu_setparent(tu_menu_t* mnup, int parent_id)
+{
+    mnup->parent_id = parent_id;
+}
+
+int tu_mnu_getparent(tu_menu_t* mnup)
+{
+    return mnup->parent_id;
+}
+
+void tu_mnu_setitemid(tu_menu_t* mnup, int index, int item_id)
+{
+    if (index >= 0 && index < mnup->nitems)
+    {
+        mnup->items[index].item_id = item_id;
+    }
+}
+
+int tu_mnu_getitemid(tu_menu_t* mnup, int index)
+{
+    if (index < 0 || index >= mnup->nitems)
+    {
+        return 0;
+    }
+    return mnup->items[index].item_id;
+}
+
+void tu_mnu_setitemflags(tu_menu_t* mnup, int index, int flags)
+{
+    if (index >= 0 && index < mnup->nitems)
+    {
+        mnup->items[index].flags = flags;
+    }
+}
+
+int tu_mnu_getitemflags(tu_menu_t* mnup, int index)
+{
+    if (index < 0 || index >= mnup->nitems)
+    {
+        return 0;
+    }
+    return mnup->items[index].flags;
+}
+
+/*==========================================================================
+  MENUBAR IMPLEMENTATION
+==========================================================================*/
+
+void tu_mbar__draw(tu_menubar_t* mbarp)
+{
+    tu_wnditem_t* itemp = &mbarp->item;
+    int x  = itemp->x;
+    int y  = itemp->y;
+    int w  = itemp->w;
+    int fg = itemp->fgcolor;
+    int bg = itemp->bgcolor;
+    int at = itemp->attribs;
+    int i;
+
+    /*fill the entire bar row*/
+    tu_drawline(x, y, w, ' ', fg, bg, at, 0);
+
+    /*draw each entry, highlighting cursel*/
+    for (i = 0; i < mbarp->count; ++i)
+    {
+        int entry_at = at | (i == mbarp->cursel ? FIELD_REVERSE : 0);
+        tu_drawtext(x + mbarp->entries[i].x_pos, y,
+            mbarp->entries[i].width,
+            mbarp->entries[i].text,
+            fg, bg, FIELD_LEFT, entry_at, 0);
+    }
+    tb_present();
+}
+
+static void tu_mbar__open_menu(tu_menubar_t* mbarp, tu_window_t* wndp)
+{
+    int idx = mbarp->cursel;
+    if (idx < 0 || idx >= mbarp->count)
+    {
+        return;
+    }
+
+    int           menu_id = mbarp->entries[idx].menu_id;
+    tu_wnditem_t* mnuitem = tu_wnd_getfield(wndp, menu_id);
+    if (!mnuitem || mnuitem->type != FIELD_MENU)
+    {
+        return;
+    }
+
+    tu_menu_t*  mnup   = (tu_menu_t*)mnuitem;
+    tu_layer_t* mlayer = tu_wnditem_getlayer(mnuitem);
+    int mw = mnuitem->w;
+    int mh = mnuitem->h;
+
+    /*position: left-aligned below the selected entry, clamped to terminal*/
+    int mx = mbarp->item.x + mbarp->entries[idx].x_pos;
+    int my = mbarp->item.y + 1; /*bar is 1 row high*/
+
+    if (mx + mw > tb_width())  mx = tb_width() - mw;
+    if (mx < 0)                mx = 0;
+    if (my + mh > tb_height()) my = tb_height() - mh;
+    if (my < 0)                my = 0;
+
+    tu_wnditem_move(mnuitem, mx, my, mw, mh, 0);
+    tu_mnu_setparent(mnup, mbarp->item.id); /*menubar is parent*/
+    tu_mnu_setcursel(mnup, 0, 0);           /*reset to first selectable item*/
+
+    tu_mbar__draw(mbarp);       /*ensure bar shows highlight before dropdown*/
+    tu_lay_show(mlayer, 1);
+    mbarp->open_idx = idx;
+    tu_wnd_setactive(wndp, menu_id); /*draws the menu, moves activep*/
+}
+
+static void tu_mbar__switch_menu(tu_menubar_t* mbarp, tu_window_t* wndp, int dir)
+{
+    /*close the currently open dropdown*/
+    if (mbarp->open_idx >= 0)
+    {
+        tu_wnditem_t* old = tu_wnd_getfield(wndp, mbarp->entries[mbarp->open_idx].menu_id);
+        if (old)
+        {
+            tu_lay_show(tu_wnditem_getlayer(old), 0);
+        }
+        mbarp->open_idx = -1;
+    }
+
+    if (mbarp->count > 0)
+    {
+        mbarp->cursel = (mbarp->cursel + dir + mbarp->count) % mbarp->count;
+    }
+
+    /*full refresh to clear the old dropdown area, then open the new one*/
+    tu_wnd_refresh(wndp);
+    tu_mbar__open_menu(mbarp, wndp);
+}
+
+int tu_mbar__process_event(tu_wnditem_t* itemp, struct tb_event* ev)
+{
+    tu_menubar_t* mbarp = (tu_menubar_t*)itemp;
+    tu_window_t*  wndp  = tu_wnditem_getparent(itemp);
+
+    if (!itemp->enable || !itemp->visible)
+    {
+        return 0;
+    }
+    if (mbarp->count == 0)
+    {
+        return 0;
+    }
+
+    if (ev->key)
+    {
+        switch (ev->key)
+        {
+            case TB_KEY_ARROW_LEFT:
+                mbarp->cursel = (mbarp->cursel - 1 + mbarp->count) % mbarp->count;
+                tu_mbar__draw(mbarp);
+                return 1;
+
+            case TB_KEY_ARROW_RIGHT:
+                mbarp->cursel = (mbarp->cursel + 1) % mbarp->count;
+                tu_mbar__draw(mbarp);
+                return 1;
+
+            case TB_KEY_ENTER:
+            case TB_KEY_ARROW_DOWN:
+                if (mbarp->cursel < 0)
+                {
+                    mbarp->cursel = 0;
+                }
+                tu_mbar__open_menu(mbarp, wndp);
+                return 1;
+
+            case TB_KEY_ESC:
+                /*deactivate: remove highlight, yield focus*/
+                mbarp->cursel   = -1;
+                mbarp->open_idx = -1;
+                tu_mbar__draw(mbarp);
+                wndp->activep   = NULL;
+                return 1;
+        }
+    }
+    return 1;
+}
+
+int tu_fld_initmenubar(tu_field_t* fldp, int id, int x, int y, int w,
+    int alignment, int attribs, void* data)
+{
+    /*cannot use INIT_FIELD_MEMBER here: the macro's 'h' parameter would
+      replace the struct member access field_ptr->h if a literal is passed.
+      Set fields directly instead.*/
+    memset(fldp, 0, sizeof(struct tu_field));
+    fldp->size      = (int)sizeof(struct tu_menubar);
+    fldp->id        = id;
+    fldp->type      = FIELD_MENUBAR;
+    fldp->x         = x;
+    fldp->y         = y;
+    fldp->w         = w;
+    fldp->h         = 1;    /*menubar is always 1 row high*/
+    fldp->enable    = 1;
+    fldp->visible   = 1;
+    fldp->alignment = alignment;
+    fldp->attribs   = attribs;
+    fldp->data      = data;
+    fldp->text      = (char*)"";
+    return 0;
+}
+
+int tu_mbar_addentry(tu_menubar_t* mbarp, const char* text, int menu_id)
+{
+    int idx;
+    int textlen;
+    if (mbarp->count >= FIELD_MENUBAR_MAXENTRIES)
+    {
+        return -1;
+    }
+
+    idx     = mbarp->count;
+    textlen = (int)strlen(text);
+    if (textlen > FIELD_MENUBAR_ENTRY_TEXTMAX)
+    {
+        textlen = FIELD_MENUBAR_ENTRY_TEXTMAX;
+    }
+
+    strncpy(mbarp->entries[idx].text, text, FIELD_MENUBAR_ENTRY_TEXTMAX);
+    mbarp->entries[idx].text[FIELD_MENUBAR_ENTRY_TEXTMAX] = 0;
+    mbarp->entries[idx].menu_id = menu_id;
+    mbarp->entries[idx].width   = textlen;
+
+    /*x_pos: immediately after the previous entry*/
+    if (idx == 0)
+    {
+        mbarp->entries[idx].x_pos = 0;
+    }
+    else
+    {
+        int prev = idx - 1;
+        mbarp->entries[idx].x_pos = mbarp->entries[prev].x_pos + mbarp->entries[prev].width;
+    }
+
+    ++mbarp->count;
+    return idx;
+}
+
+int tu_mbar_getentrycount(tu_menubar_t* mbarp)
+{
+    return mbarp->count;
+}
+
+int tu_mbar_getcursel(tu_menubar_t* mbarp)
+{
+    return mbarp->cursel;
+}
+
+int tu_mbar_getentrymenuid(tu_menubar_t* mbarp, int index)
+{
+    if (index < 0 || index >= mbarp->count)
+    {
+        return 0;
+    }
+    return mbarp->entries[index].menu_id;
+}
+
+void tu_mbar_setactive(tu_menubar_t* mbarp, tu_window_t* wndp)
+{
+    if (mbarp->cursel < 0 && mbarp->count > 0)
+    {
+        mbarp->cursel = 0;
+    }
+    /*force setactive to proceed even if bar is already activep*/
+    wndp->activep = NULL;
+    tu_wnd_setactive(wndp, mbarp->item.id);
 }
